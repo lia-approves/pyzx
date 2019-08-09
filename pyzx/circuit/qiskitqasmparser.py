@@ -58,7 +58,7 @@ class QiskitQASMParser(QASMParser):
         circuit_list = [] #list of circuits (some qiskit qasm, some pyzx circuits)
         whichpyzx = [] #which indexed circuits in circuit_list are pyzx circuits
         self.gates = [] #current list of gates
-        print(len(commands))
+
         for k in range(len(commands)):
             c = commands[k]
             pc = self.parse_command(c, self.registers)
@@ -66,7 +66,7 @@ class QiskitQASMParser(QASMParser):
                 if self.gates:
                     circ = Circuit(self.qubit_count)
                     circ.gates = self.gates
-                    whichpyzx.extend(len(circuit_list))
+                    whichpyzx.append(len(circuit_list))
                     circuit_list.append(circ)
                     self.gates = []
                 circuit_list.append(c)
@@ -75,14 +75,14 @@ class QiskitQASMParser(QASMParser):
                 if k == len(commands) - 1:
                     circ = Circuit(self.qubit_count)
                     circ.gates = self.gates
-                    whichpyzx.extend(len(circuit_list))
+                    whichpyzx.append(len(circuit_list))
                     circuit_list.append(circ)
                     self.gates = []
         return circuit_list, whichpyzx
 
     def parse_command(self, c, registers):
         try:
-            pc = super.parse_command(self, c, registers)
-        except:
+            pc = super().parse_command(c, registers)
+        except TypeError:
             return None
         return pc
