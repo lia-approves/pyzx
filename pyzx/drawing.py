@@ -188,8 +188,8 @@ def draw(g, layout=None, labels=False, figsize=(8,2), h_edge_draw='blue', rows=N
         else: sz = 0.1
             
         ax.add_patch(patches.Circle(p, sz, facecolor=col, edgecolor='black', zorder=1))
-        if labels: plt.text(p[0]+0.25, p[1]+0.25, str(v), ha='center', color='gray', fontsize=5)
-        if a: plt.text(p[0], p[1]-0.5, phase_to_s(a), ha='center', color='blue', fontsize=8)
+        if labels: plt.text(p[0]+0.25, p[1]+0.25, str(v), ha='center', color='gray', fontsize=8)
+        if a: plt.text(p[0], p[1]-0.5, phase_to_s(a), ha='center', color='blue', fontsize=12)
     
     ax.axis('equal')
     plt.close()
