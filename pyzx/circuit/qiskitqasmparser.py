@@ -23,7 +23,7 @@ from . import Circuit
 from .gates import qasm_gate_table, ZPhase, XPhase
 from .qasmparser import QASMParser
 
-class qiskitQASMParser(QASMParser):
+class QiskitQASMParser(QASMParser):
     """Class for parsing QASM source files into circuit descriptions."""
     def qiskitparse(self, s, strict=True):
         lines = s.splitlines()
@@ -55,28 +55,34 @@ class qiskitQASMParser(QASMParser):
             data = data[:i] + data[j+1:]
         #parse the regular commands
         commands = [s.strip() for s in data.split(";") if s.strip()]
-        circuit_list = []
-        counter = 0
-        whichpyzx = []
-        gates = []
-        for c in commands:
-            pc = (self.parse_command_wrapper(c, self.registers))
+        circuit_list = [] #list of circuits (some qiskit qasm, some pyzx circuits)
+        whichpyzx = [] #which indexed circuits in circuit_list are pyzx circuits
+        self.gates = [] #current list of gates
+        print(len(commands))
+        for k in range(len(commands)):
+            c = commands[k]
+            pc = self.parse_command(c, self.registers)
             if pc is None:
-               if gates:
-                   circ = Circuit(self.qubit_count)
-                   circ.gates = self.gates
-                   circuit_list.append(circ)
-               ##add nonpyzx circuit to circuitlist, update whichpyzx and counter
+                if self.gates:
+                    circ = Circuit(self.qubit_count)
+                    circ.gates = self.gates
+                    whichpyzx.extend(len(circuit_list))
+                    circuit_list.append(circ)
+                    self.gates = []
+                circuit_list.append(c)
             else:
                 self.gates.extend(pc)
-        circ = Circuit(self.qubit_count)
-        circ.gates = self.gates
-        self.circuit = circ
-        return self.circuit
+                if k == len(commands) - 1:
+                    circ = Circuit(self.qubit_count)
+                    circ.gates = self.gates
+                    whichpyzx.extend(len(circuit_list))
+                    circuit_list.append(circ)
+                    self.gates = []
+        return circuit_list, whichpyzx
 
-    def parse_command_wrapper(self, c, registers):
+    def parse_command(self, c, registers):
         try:
-            parse_command(self, c, registers)
+            pc = super.parse_command(self, c, registers)
         except:
             return None
-        return gates
+        return pc
