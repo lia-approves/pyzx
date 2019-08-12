@@ -118,7 +118,9 @@ def pack_circuit_nf(g, nf='grg'):
 def circuit_layout(g,keys = ('r','q')):
     return {v:(g.row(v),-g.qubit(v)) for v in g.vertices()}
 
-def draw_many(circ_list, whichpyzx):
+def draw_many(circ_list, whichpyzx=None):
+    if whichpyzx is None:
+        whichpyzx = range(len(circ_list))
     if len(whichpyzx) == 1:
         fig = draw(circ_list[whichpyzx[0]])
     else:

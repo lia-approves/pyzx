@@ -81,6 +81,32 @@ class QiskitQASMParser(QASMParser):
         return circuit_list, whichpyzx
 
     def parse_command(self, c, registers):
+        name, rest = c.split(" ", 1)
+        if name in ("barrier", "measure"):
+            return None
+        if name == "y":
+            return None
+        if name.startswith("u1"):
+            name, rest = c.split("(", 1)
+            c = "rz(" + rest
+        """
+        elif name.startswith("u2") or name.startswith("u3"):
+            i = name.find('(')
+            j = name.find(')')
+            if i == -1 or j == -1: raise TypeError("Invalid specification {}".format(name))
+            val = name[i+1:j]
+            args = [s.strip() for s in vals.split(",") if s.strip()]
+            phases = []
+            for a in args:
+                try:
+                    phases.append(float(a)/math.pi)
+                    except ValueError:
+                    if a.find('pi') == -1: raise TypeError("Invalid specification {}".format(name))
+                    a = a.replace('pi', '1')
+                    a = a.replace('*','')
+                    try: phases.append(float(val) * math.pi)
+                    except: raise TypeError("Invalid specification {}".format(name))
+        """
         try:
             pc = super().parse_command(c, registers)
         except TypeError:
