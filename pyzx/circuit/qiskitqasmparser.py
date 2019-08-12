@@ -111,4 +111,7 @@ class QiskitQASMParser(QASMParser):
             pc = super().parse_command(c, registers)
         except TypeError:
             return None
-        return pc
+        if c.startswith("qreg") or c.startswith("creg"):
+            return None
+        else:
+            return pc
