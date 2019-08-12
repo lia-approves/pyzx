@@ -15,7 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-__all__ = ['draw', 'pack_circuit_nf']
+__all__ = ['draw', 'draw_many', 'pack_circuit_nf']
 
 try:
     import matplotlib.pyplot as plt
@@ -118,11 +118,24 @@ def pack_circuit_nf(g, nf='grg'):
 def circuit_layout(g,keys = ('r','q')):
     return {v:(g.row(v),-g.qubit(v)) for v in g.vertices()}
 
-def draw(g, layout=None, labels=False, figsize=(8,2), h_edge_draw='blue', rows=None):
+def draw_many(circ_list, whichpyzx):
+    if len(whichpyzx) == 1:
+        fig = draw(circ_list[whichpyzx[0]])
+    else:
+        fig, axs = plt.subplots(len(whichpyzx), 1)
+        for i in range(len(whichpyzx)):
+            draw(circ_list[whichpyzx[i]], None, False, (8,2), 'blue', None, axs[i])
+    return fig
+
+def draw(g, layout=None, labels=False, figsize=(8,2), h_edge_draw='blue', rows=None, ax=None):
     if not isinstance(g, BaseGraph):
         g = g.to_graph()
-    fig1 = plt.figure(figsize=figsize)
-    ax = fig1.add_axes([0, 0, 1, 1], frameon=False)
+    if ax is None:
+        fig1 = plt.figure(figsize=figsize)
+        ax = fig1.add_axes([0, 0, 1, 1], frameon=False)
+    else:
+        fig1 = None
+        
     ax.xaxis.set_visible(False)
     ax.yaxis.set_visible(False)
     vs_on_row = dict()  # count the vertices on each row
