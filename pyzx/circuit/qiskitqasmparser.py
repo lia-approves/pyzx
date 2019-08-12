@@ -69,7 +69,7 @@ class QiskitQASMParser(QASMParser):
                     whichpyzx.append(len(circuit_list))
                     circuit_list.append(circ)
                     self.gates = []
-                circuit_list.append(c)
+                circuit_list.append(c+';')
             else:
                 self.gates.extend(pc)
                 if k == len(commands) - 1:
