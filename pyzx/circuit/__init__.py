@@ -90,6 +90,14 @@ class Circuit(object):
             gate = gate_class(*args, **kwargs)
         self.gates.append(gate)
 
+    def add_gate_to_front(self, gate, *args, **kwargs):
+        """Identical to add_gate, but prepends the gate rather than appends.
+        """
+        if isinstance(gate, str):
+            gate_class = gate_types[gate]
+            gate = gate_class(*args, **kwargs)
+        self.gates.insert(0, gate)
+
     def add_gates(self, gates, qubit):
         """Adds a series of single qubit gates on the same qubit.
         ``gates`` should be a space-separated string of gatenames.
