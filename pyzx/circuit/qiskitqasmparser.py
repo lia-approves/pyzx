@@ -71,7 +71,7 @@ class QiskitQASMParser(QASMParser):
                     self.gates = []
                 circuit_list.append(c+';')
             else:
-                self.gates.extend(pc)
+                self.gates += pc if isinstance(pc, list) else [pc]
                 if k == len(commands) - 1:
                     circ = Circuit(self.qubit_count)
                     circ.gates = self.gates
@@ -89,24 +89,21 @@ class QiskitQASMParser(QASMParser):
         if name.startswith("u1"):
             name, rest = c.split("(", 1)
             c = "rz(" + rest
-        """
         elif name.startswith("u2") or name.startswith("u3"):
             i = name.find('(')
             j = name.find(')')
             if i == -1 or j == -1: raise TypeError("Invalid specification {}".format(name))
-            val = name[i+1:j]
+            vals = name[i+1:j]
             args = [s.strip() for s in vals.split(",") if s.strip()]
             phases = []
-            for a in args:
-                try:
-                    phases.append(float(a)/math.pi)
-                    except ValueError:
-                    if a.find('pi') == -1: raise TypeError("Invalid specification {}".format(name))
-                    a = a.replace('pi', '1')
-                    a = a.replace('*','')
-                    try: phases.append(float(val) * math.pi)
-                    except: raise TypeError("Invalid specification {}".format(name))
-        """
+            for val in args:
+                phases.append(self.parse_phase(val, name))
+            if name.startswith("u2"):
+                rot = [phases[0] + 0.5, phases[1] - 0.5]
+                pc0 = super().parse_command("rz(pi*" + str(rot[0]) + ") " + rest, registers)
+                pc1 = super().parse_command("rx(pi/2) " + rest, registers)
+                pc2 = super().parse_command("rz(pi*" + str(rot[1]) + ") " + rest, registers)
+                return [pc0[0], pc1[0], pc2[0]]
         try:
             pc = super().parse_command(c, registers)
         except TypeError:
@@ -115,3 +112,22 @@ class QiskitQASMParser(QASMParser):
             return None
         else:
             return pc
+
+    def parse_phase(self, val, name=None):
+        if val.startswith("pi"):
+            val = "1*pi" + val[2:]
+        elif val.startswith("-pi"):
+            val = "-1*pi" + val[3:]
+        try:
+            phase = float(val)/math.pi
+        except ValueError:
+            if val.find('pi') == -1: raise TypeError("Invalid specification {}".format(name))
+            val = val.replace('pi', '')
+            val = val.replace('*','')
+            try:
+                phase = float(val)
+            except:
+                if val.find('/') == -1: raise TypeError("Invalid specification {}".format(name))
+                phase = float(val[:val.find('/')]) / float(val[val.find('/') + 1:])
+        phase = Fraction(phase).limit_denominator(100000000)
+        return phase

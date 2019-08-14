@@ -159,14 +159,21 @@ class QASMParser(object):
                 j = name.find(')')
                 if i == -1 or j == -1: raise TypeError("Invalid specification {}".format(name))
                 val = name[i+1:j]
+                if val.startswith("pi"):
+                    val = "1*pi" + val[2:]
+                elif val.startswith("-pi"):
+                    val = "-1*pi" + val[3:]
                 try:
                     phase = float(val)/math.pi
                 except ValueError:
                     if val.find('pi') == -1: raise TypeError("Invalid specification {}".format(name))
                     val = val.replace('pi', '')
                     val = val.replace('*','')
-                    try: phase = float(val)
-                    except: raise TypeError("Invalid specification {}".format(name))
+                    try:
+                        phase = float(val)
+                    except:
+                        if val.find('/') == -1: raise TypeError("Invalid specification {}".format(name))
+                        phase = float(val[:val.find('/')]) / float(val[val.find('/') + 1:])
                 phase = Fraction(phase).limit_denominator(100000000)
                 if name.startswith('rx'): g = XPhase(argset[0],phase=phase)
                 else: g = ZPhase(argset[0],phase=phase)
