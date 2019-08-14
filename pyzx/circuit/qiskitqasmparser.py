@@ -85,7 +85,9 @@ class QiskitQASMParser(QASMParser):
         if name in ("barrier", "measure"):
             return None
         if name == "y":
-            return None
+            pc0 = super().parse_command("z " + rest, registers)
+            pc1 = super().parse_command("x " + rest, registers)
+            return [pc0[0], pc1[0]]
         if name.startswith("u1"):
             name, rest = c.split("(", 1)
             c = "rz(" + rest
@@ -99,10 +101,25 @@ class QiskitQASMParser(QASMParser):
             for val in args:
                 phases.append(self.parse_phase(val, name))
             if name.startswith("u2"):
-                rot = [phases[0] + 0.5, phases[1] - 0.5]
+                rot = [phases[0] + 0.5, 0.5, phases[1] - 0.5]
                 pc0 = super().parse_command("rz(pi*" + str(rot[0]) + ") " + rest, registers)
-                pc1 = super().parse_command("rx(pi/2) " + rest, registers)
-                pc2 = super().parse_command("rz(pi*" + str(rot[1]) + ") " + rest, registers)
+                pc1 = super().parse_command("rx(pi*" + str(rot[1]) + ") " + rest, registers)
+                pc2 = super().parse_command("rz(pi*" + str(rot[2]) + ") " + rest, registers)
+                return [pc0[0], pc1[0], pc2[0]]
+            if name.startswith("u3"):
+                """
+                rot = [phases[1] + 3, 0.5, phases[0] + 1, 0.5, phases[2]]
+                pc0 = super().parse_command("rz(pi*" + str(rot[0]) + ") " + rest, registers)
+                pc1 = super().parse_command("rx(pi*" + str(rot[1]) + ") " + rest, registers)
+                pc2 = super().parse_command("rz(pi*" + str(rot[2]) + ") " + rest, registers)
+                pc3 = super().parse_command("rx(pi*" + str(rot[3]) + ") " + rest, registers)
+                pc4 = super().parse_command("rz(pi*" + str(rot[4]) + ") " + rest, registers)
+                return [pc0[0], pc1[0], pc2[0], pc3[0], pc4[0]]
+                """
+                rot = [phases[1] + 0.5, phases[0], phases[2] - 0.5]
+                pc0 = super().parse_command("rz(pi*" + str(rot[0]) + ") " + rest, registers)
+                pc1 = super().parse_command("rx(pi*" + str(rot[1]) + ") " + rest, registers)
+                pc2 = super().parse_command("rz(pi*" + str(rot[2]) + ") " + rest, registers)
                 return [pc0[0], pc1[0], pc2[0]]
         try:
             pc = super().parse_command(c, registers)
