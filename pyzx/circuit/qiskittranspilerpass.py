@@ -22,7 +22,7 @@ import pyzx
 from pyzx.circuit.qiskitqasmparser import QiskitQASMParser
 
 
-def QiskitTranspilerPass(qasm):
+def qiskit_transpiler_pass(qasm):
     """
     Class for parsing OPENQASM source files from a Qiskit QuantumCircuit,
     optimizing within PyZX, and converting back to OPENQASM that can be
@@ -53,11 +53,12 @@ def QiskitTranspilerPass(qasm):
         except AssertionError:
             passedAll = False
     if not passedAll:
-        return qc
+        return None
     # Ignore all register declarations and map registers back to the input qasm
     pyzx_qasm = ["\n".join(['' if line.startswith("qreg") else line for line in circ.splitlines()[2:]]) for circ in pyzx_qasm]
     for i in range(len(pyzx_qasm)):
         circ_list[whichpyzx[i]] = pyzx_qasm[i]
+    qasm_string = 'OPENQASM 2.0;\ninclude "qelib1.inc";\n'+"\n".join(circ_list)
     sorted_registers = sorted(p.registers.items(), key=lambda x: x[1][0])
     poss = [m.start() for m in re.finditer('q\[', qasm_string)]
     registered_qasm = ''
