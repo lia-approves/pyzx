@@ -320,10 +320,10 @@ class BaseGraph(object):
                 raise TypeError("Unknown input state " + s)
 
     def apply_effect(self, effect):
-        """Inserts a state into the inputs of the graph. ``state`` should be
-        a string with every character representing an input state for each qubit.
-        The possible types of states are on of '0', '1', '+', '-' for the respective
-        kets. If '-' is specified this input is skipped."""
+        """Inserts an effect into the outputs of the graph. ``effect`` should be
+        a string with every character representing an output effect for each qubit.
+        The possible types of effects are one of '0', '1', '+', '-' for the respective
+        kets. If '-' is specified this output is skipped."""
         if len(effect) > len(self.outputs): raise TypeError("Too many output effects specified")
         outputs = self.outputs.copy()
         self.outputs = []
@@ -405,7 +405,10 @@ class BaseGraph(object):
         if not self.inputs:
             self.auto_detect_inputs()
         max_r = self.depth() - 1
-        if max_r <= 2: return
+        if max_r <= 2: 
+            for o in self.outputs:
+                self.set_row(o,4)
+            max_r = self.depth() -1
         claimed = []
         for q,i in enumerate(sorted(self.inputs, key=self.qubit)):
             self.set_row(i,0)
