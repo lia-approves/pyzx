@@ -34,15 +34,6 @@ def qiskit_transpiler_pass(qasm):
     graph_list = [circ_list[w].to_graph() for w in whichpyzx]
     [pyzx.full_reduce(g) for g in graph_list]
     pyzx_circ_list = [pyzx.extract.streaming_extract(g) for g in graph_list]
-    # Nested for-while-for loop to continue extracting until it can't
-    for i in range(len(pyzx_circ_list)):
-        prev = pyzx_circ_list[i]
-        next = pyzx.extract.streaming_extract(graph_list[i])
-        while prev.gates != next.gates:
-            for j in range(len(next.gates))[::-1]:
-                pyzx_circ_list[i].add_gate_to_front(next.gates[j])
-            prev = next
-            next = pyzx.extract.streaming_extract(graph_list[i])
     pyzx_circ_list = [pyzx.optimize.basic_optimization(new_c.to_basic_gates()) for new_c in pyzx_circ_list]
     pyzx_qasm = [new_c.to_basic_gates().to_qasm() for new_c in pyzx_circ_list]
     # Verify with compare_tensor that all PyZX optimizations correctly simplify
