@@ -40,7 +40,7 @@ def qiskit_transpiler_pass(qasm):
     passedAll = True
     for i in range(len(pyzx_circ_list)):
         try:
-            assert(pyzx.compare_tensors(pyzx_circ_list[i], circ_list[whichpyzx[i]]))
+            assert(pyzx.compare_tensors(pyzx_circ_list[i], circ_list[whichpyzx[i]], False))
         except AssertionError:
             passedAll = False
     if not passedAll:
