@@ -16,10 +16,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import os
-from . import gates
-from .gates import *
+#from . import gates
 
-__all__ = ['Circuit']
+__all__ = ['Circuit', 'id']
 
 class Circuit(object):
     """Class for representing quantum circuits.
@@ -85,6 +84,7 @@ class Circuit(object):
             circuit.add_gate("CNOT", 1, 4) # adds a CNOT gate with control 1 and target 4
             circuit.add_gate("ZPhase", 2, phase=Fraction(3,4)) # Adds a ZPhase gate on qubit 2 with phase 3/4
         """
+        from .gates import gate_types
         if isinstance(gate, str):
             gate_class = gate_types[gate]
             gate = gate_class(*args, **kwargs)
@@ -121,16 +121,38 @@ class Circuit(object):
             c2 = Circuit(qubit_amount=2)
             c2.add_gate("CNOT",0,1)
             c1.add_circuit(c2, mask=[0,3]) # Now c1 has a CNOT from the first to the last qubit
+        
+        If the circuits have the same amount of qubits then it can also be called as an operator::
+
+            c1 = Circuit(2)
+            c2 = Circuit(2)
+            c1 += c2
 
         """
         if not mask:
             if self.qubits != circ.qubits: raise TypeError("Amount of qubits do not match")
-            self.gates.extend(circ.gates)
+            self.gates.extend([g.copy() for g in circ.gates])
             return
         elif len(mask) != circ.qubits: raise TypeError("Mask size does not match qubits")
         for gate in circ.gates:
             g = gate.reposition(mask)
             self.add_gate(g)
+
+    def tensor(self, other):
+        """Takes the tensor product of two Circuits. Places the second one below the first.
+        Can also be done as an operator: `circuit1 @ circuit2`."""
+        from .gates import Gate
+        if isinstance(other,Gate):
+            c2 = Circuit(other._max_target()+1)
+            c2.add_gate(other)
+            other = c2
+        if not isinstance(other,Circuit):
+            raise Exception("Cannot tensor type", type(other), "to Circuit")
+        c = Circuit(self.qubits + other.qubits)
+        c.gates = [g.copy() for g in self.gates]
+        mask = [i+self.qubits for i in range(other.qubits)]
+        c.gates.extend([g.reposition(mask) for g in other.gates])
+        return c
 
     def to_basic_gates(self):
         """Returns a new circuit with every gate expanded in terms of X/Z phases, Hadamards
@@ -149,6 +171,37 @@ class Circuit(object):
                 c.add_gate(g)
         return c
 
+    ### OPERATORS
+
+    def __iadd__(self, other):
+        from .gates import Gate
+        if isinstance(other, Circuit):
+            self.add_circuit(other)
+            if other.qubits > self.qubits:
+                self.qubits = other.qubits
+        elif isinstance(other, Gate):
+            self.add_gate(other)
+            if other._max_target() + 1 > self.qubits:
+                self.qubits = other._max_target() + 1
+        else:
+            raise Exception("Cannot add object of type", type(other), "to Circuit")
+        return self
+
+    def __add__(self, other):
+        c = self.copy()
+        c += other
+        return c
+
+    def __len__(self):
+        return len(self.gates)
+
+    def __iter__(self):
+        return iter(self.gates)
+
+    def __matmul__(self, other):
+        return self.tensor(other)
+
+
 
     ### CONVERSION METHODS
 
@@ -163,12 +216,14 @@ class Circuit(object):
         from .graphparser import graph_to_circuit
         return graph_to_circuit(g, split_phases=split_phases)
 
-    def to_graph(self, compress_rows=True, backend=None):
+    def to_graph(self, zh=False, compress_rows=True, backend=None):
         """Turns the circuit into a ZX-Graph.
         If ``compress_rows`` is set, it tries to put single qubit gates on different qubits,
         on the same row."""
         from .graphparser import circuit_to_graph
-        return circuit_to_graph(self, compress_rows, backend)
+
+        return circuit_to_graph(self if zh else self.to_basic_gates(),
+            compress_rows, backend)
 
     def to_tensor(self, preserve_scalar=True):
         """Returns a numpy tensor describing the circuit."""
@@ -186,6 +241,8 @@ class Circuit(object):
             return Circuit.from_qc_file(circuitfile)
         if ext == 'qasm':
             return Circuit.from_qasm_file(circuitfile)
+        if ext == 'qsim':
+            return Circuit.from_qsim_file(circuitfile)
         if ext == 'qgraph':
             raise TypeError(".qgraph files are not Circuits. Please load them as graphs using json_to_graph")
         if ext == 'quipper':
@@ -204,6 +261,16 @@ class Circuit(object):
         with open(fname, 'r') as f:
             data = f.read()
         return parse_qc(data)
+
+    @staticmethod
+    def from_qsim_file(fname):
+        """Produces a :class:`Circuit` based on a .qc description of a circuit.
+        If a Tofolli gate with more than 2 controls is encountered, ancilla qubits are added.
+        Currently up to 5 controls are supported."""
+        from .qsimparser import parse_qsim
+        with open(fname, 'r') as f:
+            data = f.read()
+        return parse_qsim(data)
 
     @staticmethod
     def from_quipper_file(fname):
@@ -274,6 +341,7 @@ class Circuit(object):
     def stats(self):
         """Returns statistics on the amount of gates in the circuit, separated into different classes 
         (such as amount of T-gates, two-qubit gates, Hadamard gates)."""
+        from .gates import ZPhase, XPhase, CZ,CX,CNOT, HAD
         total = 0
         tcount = 0
         twoqubit = 0
@@ -313,6 +381,8 @@ def determine_file_type(circuitfile):
             return "qasm"
         if ext == '.qgraph':
             return "qgraph"
+        if ext == '.qsim':
+            return 'qsim'
         if ext.find('quip') != -1:
             return "quipper"
         f = open(fname, 'r')
@@ -326,3 +396,7 @@ def determine_file_type(circuitfile):
             return "qasm"
 
         raise TypeError("Couldn't determine circuit format.")
+
+
+def id(n):
+    return Circuit(n)

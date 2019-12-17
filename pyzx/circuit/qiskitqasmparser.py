@@ -16,6 +16,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 
+import sys
 import math
 from fractions import Fraction
 
@@ -117,6 +118,10 @@ class QiskitQASMParser(QASMParser):
         try:
             pc = super().parse_command(c, registers)
         except TypeError:
+            return None
+        except:
+            print()
+            sys.stdout.flush()
             return None
         if c.startswith("qreg") or c.startswith("creg"):
             return None

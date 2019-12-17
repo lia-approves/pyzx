@@ -21,7 +21,8 @@ from .drawing import *
 from .simplify import *
 from .io import *
 from .tensor import *
-from .circuit import Circuit, gates
+from .circuit import Circuit, gates, id
+from .circuit.qasmparser import qasm
 from .circuit.sqasm import sqasm
 from . import quantomatic
 from . import generate
@@ -29,11 +30,14 @@ from . import todd
 from . import linalg
 from . import extract
 from . import rules
+from . import hrules
 from . import optimize
 from . import simplify
+from . import hsimplify
 from . import d3
 from . import tikz
 from . import simulate
+
 
 if __name__ == '__main__':
     print("Please execute this as a module by running 'python -m pyzx'")

@@ -180,6 +180,10 @@ def spider(g, matches):
             v0, v1 = m[0], m[1]
 
         g.set_phase(v0, g.phase(v0) + g.phase(v1))
+
+        if g.merge_vdata != None:
+            g.merge_vdata(g, v0, v1)
+
         if g.track_phases:
             g.fuse_phases(v0,v1)
 
@@ -663,6 +667,8 @@ def merge_phase_gadgets(g, matches):
         rem.extend(othertargets)
         for w in othertargets:
             g.fuse_phases(v,w)
+            if g.merge_vdata != None:
+                g.merge_vdata(g, v, w)
     return ({}, rem, [], False)
 
 
@@ -707,8 +713,8 @@ def match_supplementarity(g):
                     taken.update(neigh)
                     candidates.difference_update(neigh)
                     break
-    if m: 
-        print(m)
+    #if m: 
+    #    print(m)
         #if m[0][2] == 2: raise Exception("Good pair")
     return m
 

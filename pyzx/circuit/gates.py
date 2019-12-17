@@ -24,6 +24,8 @@ import copy
 import math
 from fractions import Fraction
 
+from . import Circuit
+
 class InitAncilla:
     name = 'InitAncilla'
     def __init__(self, label):
@@ -57,6 +59,25 @@ class Gate(object):
             elif hasattr(other,a): return False
         if self.index != other.index: return False
         return True
+
+    def _max_target(self):
+        qubits = self.target
+        if hasattr(self, "control"):
+            qubits = max([qubits, self.control])
+        return qubits
+
+    def __add__(self, other):
+        c = Circuit(self._max_target()+1)
+        c.add_gate(self)
+        c += other
+        return c
+
+    def __matmul__(self,other):
+        c = Circuit(self._max_target()+1)
+        c.add_gate(self)
+        c2 = Circuit(other._max_target()+1)
+        c2.add_gate(other)
+        return c@c2
 
     def copy(self):
         return copy.copy(self)
@@ -136,9 +157,9 @@ class Gate(object):
         #     args.insert(0, phase_to_s(self.phase))
         return "{} {}".format(n, " ".join(args))
 
-    def graph_add_node(self, g, labels, qs, t, q, r, phase=0):
+    def graph_add_node(self, g, labels, qs, t, q, r, phase=0, etype=1):
         v = g.add_vertex(t,labels[q],r,phase)
-        g.add_edge((qs[q],v))
+        g.add_edge((qs[q],v), etype)
         qs[q] = v
         return v
 
@@ -338,6 +359,9 @@ class ParityPhase(Gate):
     def __str__(self):
         return "ParityPhase({!s}, {!s})".format(self.phase, ", ".join(str(t) for t in self.targets))
 
+    def _max_target(self):
+        return max(self.targets)
+
     def reposition(self, mask):
         g = self.copy()
         g.targets = [mask[t] for t in g.targets]
@@ -355,6 +379,125 @@ class ParityPhase(Gate):
     def tcount(self):
         return 1 if self.phase.denominator > 2 else 0
 
+
+class FSim(Gate):
+    name = 'FSim'
+    quippername = 'undefined'
+    qasm_name = 'undefined'
+    qc_name = 'undefined'
+    qsim_name = 'fs'
+    printphase = True
+    def __init__(self, theta, phi, control, target):
+        self.control = control
+        self.target = target
+        self.theta = theta
+        self.phi = phi
+
+    def __eq__(self, other):
+        if self.index != other.index: return False
+        if (isinstance(other, type(self)) and
+            self.control == other.control and self.target == other.target and
+            self.theta == other.theta and self.phi == other.phi):
+            return True
+        return False
+
+    def __str__(self):
+        return "FSim({!s}, {!s}, {!s}, {!s})".format(self.theta, self.phi, self.control, self.target)
+
+    def reposition(self, mask):
+        g = self.copy()
+        g.targets = [mask[t] for t in g.targets]
+        return g
+
+    def to_basic_gates(self):
+        # TODO
+        #cnots = [CNOT(self.targets[i],self.targets[i+1]) for i in range(len(self.targets)-1)]
+        #p = ZPhase(self.targets[-1], self.phase)
+        return [self]
+
+    def to_graph(self, g, labels, qs, rs):
+        # TODO: this version assumes theta is always (pi/2)
+        r = max(rs[self.target],rs[self.control])
+        qmin = min(self.target,self.control)
+        c0 = self.graph_add_node(g,labels, qs,1,self.control,r)
+        t0 = self.graph_add_node(g,labels, qs,1,self.target,r)
+        c = g.add_vertex(1, self.control, r+1)
+        t = g.add_vertex(1, self.target, r+1)
+        g.add_edge((c0, t))
+        g.add_edge((t0, c))
+        qs[self.control] = c
+        qs[self.target] = t
+
+        pg0 = g.add_vertex(1, qmin+0.5,r+2)
+        pg1 = g.add_vertex(1, qmin+0.5,r+3)
+
+        g.set_phase(c, Fraction(-1,2) * self.phi)
+        g.set_phase(t, Fraction(-1,2) * self.phi)
+        g.set_phase(pg1, (Fraction(1,2) * self.phi) - Fraction(1,2))
+
+        g.add_edge((c, pg0), 2)
+        g.add_edge((t, pg0), 2)
+        g.add_edge((pg0, pg1), 2)
+
+        #rs[self.target] = r+2
+        #rs[self.control] = r+2
+
+        for i in range(len(rs)):
+             rs[i] = r+4
+
+        g.scalar.add_power(1)
+
+        # c1 = self.graph_add_node(g,labels, qs,1,self.control,r)
+        # t1 = self.graph_add_node(g,labels, qs,1,self.target,r)
+        # c2 = self.graph_add_node(g,labels, qs,1,self.control,r+1)
+        # t2 = self.graph_add_node(g,labels, qs,1,self.target,r+1)
+        
+        # pg1 = g.add_vertex(1,qmin-0.5,r+1)
+        # pg1b = g.add_vertex(1,qmin-1.5,r+1, phase=self.theta)
+        # g.add_edge((c1,pg1),2)
+        # g.add_edge((t1,pg1),2)
+        # g.add_edge((pg1,pg1b),2)
+
+        # pg2 = g.add_vertex(1,qmin-0.5,r+2)
+        # pg2b = g.add_vertex(1,qmin-1.5,r+2, phase=-self.theta)
+        # g.add_edge((c1,pg2),2)
+        # g.add_edge((t1,pg2),2)
+        # g.add_edge((c2,pg2),2)
+        # g.add_edge((t2,pg2),2)
+        # g.add_edge((pg2,pg2b),2)
+
+        # if zh_form:
+        #     hbox = g.add_vertex(3,qmin-0.5,r+3, phase=self.phi)
+        #     g.add_edge((c2,hbox),1)
+        #     g.add_edge((t2,hbox),1)
+        # else:
+        #     half_phi = Fraction(1,2) * self.phi
+        #     pg3 = g.add_vertex(1,qmin-0.5,r+3)
+        #     pg3b = g.add_vertex(1,qmin-1.5,r+3, phase=half_phi)
+        #     g.add_edge((c2,pg3),2)
+        #     g.add_edge((t2,pg3),2)
+        #     g.add_edge((pg3,pg3b),2)
+        #     g.set_phase(c2, -half_phi)
+        #     g.set_phase(t2, -half_phi)
+
+        # for i in range(len(rs)):
+        #     rs[i] = r+5
+
+        #h = g.add_vertex(3, qmin + 0.5, r + 0.5)
+        #g.add_edge((t,h),1)
+        #g.add_edge((c1,h),1)
+        #g.add_edge((c2,h),1)
+        
+        #rs[self.target] = r+4
+        #rs[self.control] = r+4
+
+        # TODO
+        #for gate in self.to_basic_gates():
+        #    gate.to_graph(g, labels, qs, rs)
+
+    def tcount(self):
+        # TODO
+        return 0 #1 if self.phase.denominator > 2 else 0
 
 class CX(CZ):
     name = 'CX'
@@ -387,11 +530,11 @@ class SWAP(CZ):
         for gate in self.to_basic_gates():
             gate.to_graph(g, labels, qs,rs)
 
-class Tofolli(Gate):
-    name = 'Tof'
-    quippername = 'not'
-    qasm_name = 'ccx'
-    qc_name = 'Tof'
+class CCZ(Gate):
+    name = 'CCZ'
+    quippername = 'Z'
+    qasm_name = 'ccz'
+    qc_name = 'Z'
     def __init__(self, ctrl1, ctrl2, target):
         self.target = target
         self.ctrl1 = ctrl1
@@ -406,6 +549,9 @@ class Tofolli(Gate):
              (self.ctrl1 == other.ctrl2 and self.ctrl2 == other.ctrl1))): return True
         return False
 
+    def _max_target(self):
+        return max([self.target,self.ctrl1,self.ctrl2])
+
     def tcount(self):
         return 7
 
@@ -418,14 +564,28 @@ class Tofolli(Gate):
 
     def to_basic_gates(self):
         c1,c2,t = self.ctrl1, self.ctrl2, self.target
-        return [HAD(t),CNOT(c2,t), T(t,adjoint=True),
+        return [CNOT(c2,t), T(t,adjoint=True),
                 CNOT(c1,t), T(t),CNOT(c2,t),T(t,adjoint=True),
                 CNOT(c1,t), T(c2), T(t), CNOT(c1,c2),T(c1),
-                T(c2,adjoint=True),CNOT(c1,c2),HAD(t)]
-        #return [g.reposition(mask) for g in self.circuit_rep.gates]
+                T(c2,adjoint=True),CNOT(c1,c2)]
+
     def to_graph(self, g, labels, qs, rs):
-        for gate in self.to_basic_gates():
-            gate.to_graph(g, labels, qs, rs)
+        # if basic_gates:
+        #     for gate in self.to_basic_gates():
+        #         gate.to_graph(g, labels, qs, rs)
+        # else:
+        r = max(rs[self.target],rs[self.ctrl1],rs[self.ctrl2])
+        qmin = min(self.target,self.ctrl1,self.ctrl2)
+        t = self.graph_add_node(g,labels, qs,1,self.target,r)
+        c1 = self.graph_add_node(g,labels, qs,1,self.ctrl1,r)
+        c2 = self.graph_add_node(g,labels, qs,1,self.ctrl2,r)
+        h = g.add_vertex(3, qmin + 0.5, r + 0.5)
+        g.add_edge((t,h),1)
+        g.add_edge((c1,h),1)
+        g.add_edge((c2,h),1)
+        rs[self.target] = r+1
+        rs[self.ctrl1] = r+1
+        rs[self.ctrl2] = r+1
 
     def to_quipper(self):
         s = 'QGate["{}"]({!s})'.format(self.quippername,self.target)
@@ -433,17 +593,23 @@ class Tofolli(Gate):
         s += ' with nocontrol'
         return s
 
-class CCZ(Tofolli):
-    name = 'CCZ'
-    quippername = 'Z'
-    qasm_name = 'ccz'
-    qc_name = 'Z'
+class Tofolli(CCZ):
+    name = 'Tof'
+    quippername = 'not'
+    qasm_name = 'ccx'
+    qc_name = 'Tof'
     def to_basic_gates(self):
         c1,c2,t = self.ctrl1, self.ctrl2, self.target
-        return [CNOT(c2,t), T(t,adjoint=True),
+        return [HAD(t), CNOT(c2,t), T(t,adjoint=True),
                 CNOT(c1,t), T(t),CNOT(c2,t),T(t,adjoint=True),
                 CNOT(c1,t), T(c2), T(t), CNOT(c1,c2),T(c1),
-                T(c2,adjoint=True),CNOT(c1,c2)]
+                T(c2,adjoint=True),CNOT(c1,c2), HAD(t)]
+
+    def to_graph(self, g, labels, qs, rs):
+        t = self.target
+        HAD(t).to_graph(g, labels, qs, rs)
+        CCZ.to_graph(self, g, labels, qs, rs)
+        HAD(t).to_graph(g, labels, qs, rs)
 
 gate_types = {
     "XPhase": XPhase,

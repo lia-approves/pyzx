@@ -189,3 +189,8 @@ class QASMParser(object):
                 continue
             raise TypeError("Unknown gate name: {}".format(c))
         return gates
+
+def qasm(s):
+    p = QASMParser()
+    return p.parse(s, strict=False)
+

@@ -169,6 +169,10 @@ class BaseGraph(object):
         self.inputs = []
         self.outputs = []
 
+        # merge_vdata(v0,v1) is an optional, custom function for merging
+        # vdata of v1 into v0 during spider fusion etc.
+        self.merge_vdata = None
+
     def __str__(self):
         return "Graph({} vertices, {} edges)".format(
                 str(self.num_vertices()),str(self.num_edges()))
@@ -203,6 +207,7 @@ class BaseGraph(object):
         g = Graph(backend = backend)
         g.track_phases = self.track_phases
         g.scalar = self.scalar.copy()
+        g.merge_vdata = self.merge_vdata
         mult = 1
         if adjoint: mult = -1
 
@@ -238,6 +243,19 @@ class BaseGraph(object):
     def adjoint(self):
         """Returns a new graph equal to the adjoint of this graph."""
         return self.copy(adjoint=True)
+
+    def map_qubits(self, qubit_map):
+        for v in self.vertices():
+            q = self.qubit(v)
+            r = self.row(v)
+            q0 = min(max(0,math.floor(q)), len(qubit_map)-1)
+            offset = q - q0
+            coord = qubit_map[q0]
+            qf = 3*(coord[0]+offset)+(0.6 * coord[1])
+            rf = 3*r+(0.6 * coord[1])
+            self.set_qubit(v, qf)
+            self.set_row(v, rf)
+
 
     def replace_subgraph(self, left_row, right_row, replace):
         """Deletes the subgraph of all nodes with rank strictly between ``left_row``
@@ -279,7 +297,8 @@ class BaseGraph(object):
             self.set_edge_type(self.edge(s,t), replace.edge_type(e))
 
     def compose(self, other):
-        """Inserts a circuit after this one. The amount of qubits of the circuits must match."""
+        """Inserts a graph after this one. The amount of qubits of the graphs must match.
+        Also available by the operator `graph1 + graph2`"""
         if self.qubit_count() != other.qubit_count():
             raise TypeError("Circuits work on different qubit amounts")
         self.normalise()
@@ -294,6 +313,41 @@ class BaseGraph(object):
                 other.set_edge_type(e, 3-other.edge_type(e)) # toggle the edge type
         d = self.depth()
         self.replace_subgraph(d-1,d,other)
+
+    def tensor(self, other):
+        """Take the tensor product of two graphs. Places the second graph below the first one.
+        Can also be called using the operator `graph1 @ graph2`"""
+        g = self.copy()
+        ts = other.types()
+        qs = other.qubits()
+        height = max(qs.values()) + 1
+        rs = other.rows()
+        phases = other.phases()
+        vertex_map = dict()
+        for v in other.vertices():
+            w = g.add_vertex(ts[v],qs[v]+height,rs[v],phases[v])
+            vertex_map[v] = w
+        for e in other.edges():
+            s,t = other.edge_st(e)
+            g.add_edge((vertex_map[s],vertex_map[t]),other.edge_type(e))
+        for v in other.inputs:
+            g.inputs.append(vertex_map[v])
+        for v in other.outputs:
+            g.outputs.append(vertex_map[v])
+        return g
+
+
+    def __iadd__(self, other):
+        self.compose(other)
+        return self
+
+    def __add__(self, other):
+        g = self.copy()
+        g += other
+        return g
+
+    def __matmul__(self, other):
+        return self.tensor(other)
 
     def apply_state(self, state):
         """Inserts a state into the inputs of the graph. ``state`` should be
@@ -354,6 +408,19 @@ class BaseGraph(object):
         """Returns a representation of the graph as a matrix using :func:`~pyzx.tensor.tensorfy`"""
         return tensor_to_matrix(tensorfy(self, preserve_scalar), len(self.inputs), len(self.outputs))
 
+
+    def is_id(self):
+        for e in self.edges():
+            s,t = self.edge_st(e)
+            if s in self.inputs and t in self.outputs:
+                if self.inputs.index(s) != self.outputs.index(t):
+                    return False
+            elif t in self.inputs and s in self.outputs:
+                if self.inputs.index(t) != self.outputs.index(s):
+                    return False
+            else:
+                return False
+        return True
 
     def vindex(self):
         """The index given to the next vertex added to the graph. It should always
@@ -451,12 +518,15 @@ class BaseGraph(object):
         new vertices added to the graph, namely: range(g.vindex() - amount, g.vindex())"""
         raise NotImplementedError("Not implemented on backend " + type(self).backend)
 
-    def add_vertex(self, ty=0, qubit=-1, row=-1, phase=0):
+    def add_vertex(self, ty=0, qubit=-1, row=-1, phase=None):
         """Add a single vertex to the graph and return its index.
         The optional parameters allow you to respectively set
         the type, qubit index, row index and phase of the vertex."""
         v = self.add_vertices(1)[0]
         if ty: self.set_type(v, ty)
+        if phase is None:
+            if ty == 3: phase = 1
+            else: phase = 0
         if qubit!=-1: self.set_qubit(v, qubit)
         if row!=-1: self.set_row(v, row)
         if phase: 
@@ -491,7 +561,7 @@ class BaseGraph(object):
             
             t1 = self.type(v1)
             t2 = self.type(v2)
-            if t1 == t2:                #types are equal,
+            if (t1 == 1 and t2 == 1) or (t1 == 2 and t2 == 2): #types are ZX & equal,
                 n1 = bool(n1)           #so normal edges fuse
                 pairs, n2 = divmod(n2,2)#while hadamard edges go modulo 2
                 self.scalar.add_power(-2*pairs)
@@ -502,7 +572,7 @@ class BaseGraph(object):
                 elif n1 != 0: new_type = 1
                 elif n2 != 0: new_type = 2
                 else: new_type = 0
-            else:                       #types are different
+            elif (t1 == 1 and t2 == 2) or (t1 == 2 and t2 == 1): #types are ZX & different
                 pairs, n1 = divmod(n1,2)#so normal edges go modulo 2
                 n2 = bool(n2)           #while hadamard edges fuse
                 self.scalar.add_power(-2*pairs)
@@ -513,6 +583,23 @@ class BaseGraph(object):
                 elif n1 != 0: new_type = 1
                 elif n2 != 0: new_type = 2
                 else: new_type = 0
+            elif (t1 == 1 and t2 == 3) or (t1 == 3 and t2 == 1): # Z & H-box
+                n1 = bool(n1)
+                if n1 + n2 > 1:
+                    raise ValueError("Unhandled parallel edges between nodes of type (%s,%s)" % (t1,t2))
+                else:
+                    if n1 == 1: new_type = 1
+                    elif n2 == 1: new_type = 2
+                    else: new_type = 0
+            else:
+                if n1 + n2 > 1:
+                    raise ValueError("Unhandled parallel edges between nodes of type (%s,%s)" % (t1,t2))
+                else:
+                    if n1 == 1: new_type = 1
+                    elif n2 == 1: new_type = 2
+                    else: new_type = 0
+
+
             if new_type != 0: # They should be connected, so update the graph
                 if conn_type == 0: #new edge added
                     add[new_type-1].append((v1,v2))

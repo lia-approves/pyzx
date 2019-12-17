@@ -27,8 +27,9 @@ import math
 
 from .graph.base import BaseGraph
 
-def phase_to_s(a):
-    if not a: return ''
+def phase_to_s(a, t):
+    if (a == 0 and t != 3): return ''
+    if (a == 1 and t == 3): return ''
     if not isinstance(a, Fraction):
         a = Fraction(a)
     ns = '' if a.numerator == 1 else str(a.numerator)
@@ -138,6 +139,49 @@ def draw(g, layout=None, labels=False, figsize=(8,2), h_edge_draw='blue', rows=N
     else:
         fig1 = None
         
+def arrange_scalar_diagram(g):
+    g.normalise()
+    rs = g.rows()
+    qs = g.qubits()
+    ty = g.types()
+    gadgets = dict()
+    verts = []
+    min_row = 1000000
+    rows_used = dict()
+    for v in g.vertices():
+        if len(list(g.neighbours(v))) == 1:
+            w = list(g.neighbours(v))[0]
+            gadgets[(v,w)] = 0
+        elif all(g.vertex_degree(w) > 1 for w in g.neighbours(v)): # Not part of a phase gadget
+            verts.append(v)
+            #if rs[v] < min_row: min_row = rs[v]
+            if rs[v] in rows_used: rows_used[rs[v]].append(v)
+            else: rows_used[rs[v]] = [v]
+    
+    for i, r in enumerate(sorted(rows_used.keys())):
+        for v in rows_used[r]:
+            g.set_row(v,i)
+            if qs[v] < 0: g.set_qubit(v,1)
+            else: g.set_qubit(v,qs[v]+1)
+    
+    for v,w in gadgets.keys():
+        score = sum(rs[n] for n in g.neighbours(w))/len(list(g.neighbours(w)))
+        gadgets[(v,w)] = score
+    
+    l = list(gadgets.items())
+    l = sorted(l, key=lambda x: x[1])
+    for i in range(len(l)):
+        v,w = l[i][0]
+        g.set_row(v, i+0.5)
+        g.set_row(w, i+0.5)
+        g.set_qubit(v,-1)
+        g.set_qubit(w,0)
+
+def draw(g, layout=None, labels=False, figsize=(8,2), h_edge_draw='blue', rows=None):
+    if not isinstance(g, BaseGraph):
+        g = g.to_graph(zh=True)
+    fig1 = plt.figure(figsize=figsize)
+    ax = fig1.add_axes([0, 0, 1, 1], frameon=False)
     ax.xaxis.set_visible(False)
     ax.yaxis.set_visible(False)
     vs_on_row = dict()  # count the vertices on each row
@@ -205,6 +249,20 @@ def draw(g, layout=None, labels=False, figsize=(8,2), h_edge_draw='blue', rows=N
         ax.add_patch(patches.Circle(p, sz, facecolor=col, edgecolor='black', zorder=1))
         if labels: ax.text(p[0]+0.25, p[1]+0.25, str(v), ha='center', color='gray', fontsize=8)
         if a: ax.text(p[0], p[1]-0.5, phase_to_s(a), ha='center', color='blue', fontsize=12)
+        a_offset = 0.5
+
+        if t == 1:
+            ax.add_patch(patches.Circle(p, 0.2, facecolor='green', edgecolor='black', zorder=1))
+        elif t == 2:
+            ax.add_patch(patches.Circle(p, 0.2, facecolor='red', edgecolor='black', zorder=1))
+        elif t == 3:
+            ax.add_patch(patches.Rectangle((p[0]-0.1, p[1]-0.1), 0.2, 0.2, facecolor='yellow', edgecolor='black'))
+            a_offset = 0.25
+        else:
+            ax.add_patch(patches.Circle(p, 0.1, facecolor='black', edgecolor='black', zorder=1))
+
+        if labels: plt.text(p[0]+0.25, p[1]+0.25, str(v), ha='center', color='gray', fontsize=5)
+        if a: plt.text(p[0], p[1]-a_offset, phase_to_s(a, t), ha='center', color='blue', fontsize=8)
     
     ax.axis('equal')
     plt.close()
