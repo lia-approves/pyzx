@@ -20,10 +20,12 @@ import sys
 if __name__ == '__main__':
     sys.path.append('..')
 from pyzx.generate import cnots as generate_cnots
-from pyzx.circuit import Circuit, gate_types
+from pyzx.circuit import Circuit, gates
 from pyzx.linalg import Mat2
-
-import numpy as np
+try:
+    import numpy as np
+except:
+    np = None
 
 class CNOT_tracker(Circuit):
     def __init__(self, n_qubits, **kwargs):
@@ -64,7 +66,7 @@ class CNOT_tracker(Circuit):
             circuit.add_gate("ZPhase", 2, phase=Fraction(3,4)) # Adds a ZPhase gate on qubit 2 with phase 3/4
         """
         if isinstance(gate, str):
-            gate_class = gate_types[gate]
+            gate_class = gates.gate_types[gate]
             gate = gate_class(*args, **kwargs)
         self.gates.insert(0, gate)
 
@@ -120,7 +122,7 @@ def build_random_parity_map(qubits, n_cnots, circuit=None):
 if __name__ == '__main__':
     import argparse
     import os
-    from pyzx.cnot_mapper import make_into_list
+    from pyzx.scripts.cnot_mapper import make_into_list
 
     parser = argparse.ArgumentParser(description="Generates random CNOT circuits and stores them as QASM files.")
     parser.add_argument("folder", help="The QASM file or folder with QASM files to be routed.")

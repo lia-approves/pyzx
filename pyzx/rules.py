@@ -42,9 +42,14 @@ These rewrite rules are used in the simplification procedures of :mod:`simplify`
 In particular, they are used in combination with :func:`simplify.simp` to create rewrite strategies.
 """
 
+from typing import Tuple, List, Dict, Any
+
 from fractions import Fraction
 import itertools
 
+from .utils import VertexType, EdgeType, toggle_edge
+
+TypeRewriteOutput = Tuple[Dict[Any,Tuple[int,int]], List, List, bool]
 
 def apply_rule(g, rewrite, m, check_isolated_vertices=True):
     etab, rem_verts, rem_edges, check_isolated_vertices = rewrite(g, m)
@@ -61,7 +66,7 @@ def match_bialg(g):
         v0, v1 = g.edge_st(e)
         v0t = types[v0]
         v1t = types[v1]
-        if ((v0t == 1 and v1t == 2) or (v0t == 2 and v1t == 1)):
+        if (v0t == VertexType.Z and v1t == VertexType.X) or (v0t == VertexType.X and v1t == VertexType.Z):
             v0n = [n for n in g.neighbours(v0) if not n == v1]
             v1n = [n for n in g.neighbours(v1) if not n == v0]
             if (
@@ -95,7 +100,7 @@ def match_bialg_parallel(g, matchf=None, num=-1):
         v0, v1 = g.edge_st(candidates.pop())
         v0t = types[v0]
         v1t = types[v1]
-        if ((v0t == 1 and v1t == 2) or (v0t == 2 and v1t == 1)):
+        if ((v0t == VertexType.Z and v1t == VertexType.X) or (v0t == VertexType.X and v1t == VertexType.Z)):
             v0n = [n for n in g.neighbours(v0) if not n == v1]
             v1n = [n for n in g.neighbours(v1) if not n == v0]
             if (
@@ -128,7 +133,7 @@ def bialg(g, matches):
 def match_spider(g):
     """Does the same as :func:`match_spider_parallel` but with ``num=1``."""
     for e in g.edges():
-        if g.edge_type(e) != 1: continue
+        if g.edge_type(e) != EdgeType.SIMPLE: continue
         v0, v1 = g.edge_st(e)
         if (g.type(v0) == g.type(v1)):
             return [[v0,v1]]
@@ -139,7 +144,7 @@ def match_spider_parallel(g, matchf=None, num=-1):
     
     :param g: An instance of a ZX-graph.
     :param matchf: An optional filtering function for candidate edge, should
-       return True if a edge should considered as a match. Passing None will
+       return True if the edge should be considered for matchings. Passing None will
        consider all edges.
     :param num: Maximal amount of matchings to find. If -1 (the default)
        tries to find as many as possible.
@@ -153,11 +158,11 @@ def match_spider_parallel(g, matchf=None, num=-1):
     m = []
     while (num == -1 or i < num) and len(candidates) > 0:
         e = candidates.pop()
-        if g.edge_type(e) != 1: continue
+        if g.edge_type(e) != EdgeType.SIMPLE: continue
         v0, v1 = g.edge_st(e)
         v0t = types[v0]
         v1t = types[v1]
-        if (v0t == v1t and v0t!=0):
+        if (v0t == v1t and v0t!=VertexType.BOUNDARY and v0t!=VertexType.H_BOX):
                 i += 1
                 for v in g.neighbours(v0):
                     for c in g.incident_edges(v): candidates.discard(c)
@@ -165,6 +170,7 @@ def match_spider_parallel(g, matchf=None, num=-1):
                     for c in g.incident_edges(v): candidates.discard(c)
                 m.append([v0,v1])
     return m
+
 
 def spider(g, matches):
     '''Performs spider fusion given a list of matchings from ``match_spider(_parallel)``
@@ -179,10 +185,7 @@ def spider(g, matches):
         else:
             v0, v1 = m[0], m[1]
 
-        g.set_phase(v0, g.phase(v0) + g.phase(v1))
-
-        if g.merge_vdata != None:
-            g.merge_vdata(g, v0, v1)
+        g.add_to_phase(v0, g.phase(v1))
 
         if g.track_phases:
             g.fuse_phases(v0,v1)
@@ -255,10 +258,10 @@ def match_pivot_parallel(g, matchf=None, num=-1, check_edge_types=False):
     m = []
     while (num == -1 or i < num) and len(candidates) > 0:
         e = candidates.pop()
-        if not check_edge_types and g.edge_type(e) != 2: continue
+        if not check_edge_types and g.edge_type(e) != EdgeType.HADAMARD: continue
         v0, v1 = g.edge_st(e)
 
-        if not (types[v0] == 1 and types[v1] == 1): continue
+        if not (types[v0] == VertexType.Z and types[v1] == VertexType.Z): continue
 
         v0a = phases[v0]
         v1a = phases[v1]
@@ -270,8 +273,8 @@ def match_pivot_parallel(g, matchf=None, num=-1, check_edge_types=False):
         v0b = []
         for n in v0n:
             et = g.edge_type(g.edge(v0,n))
-            if types[n] == 1 and et == 2: pass
-            elif types[n] == 0: v0b.append(n)
+            if types[n] == VertexType.Z and et == EdgeType.HADAMARD: pass
+            elif types[n] == VertexType.BOUNDARY: v0b.append(n)
             else:
                 invalid_edge = True
                 break
@@ -282,8 +285,8 @@ def match_pivot_parallel(g, matchf=None, num=-1, check_edge_types=False):
         v1b = []
         for n in v1n:
             et = g.edge_type(g.edge(v1,n))
-            if types[n] == 1 and et == 2: pass
-            elif types[n] == 0: v1b.append(n)
+            if types[n] == VertexType.Z and et == EdgeType.HADAMARD: pass
+            elif types[n] == VertexType.BOUNDARY: v1b.append(n)
             else:
                 invalid_edge = True
                 break
@@ -318,7 +321,7 @@ def match_pivot_gadget(g, matchf=None, num=-1):
         e = candidates.pop()
         v0, v1 = g.edge_st(e)
 
-        if not (types[v0] == 1 and types[v1] == 1): continue
+        if not (types[v0] == VertexType.Z and types[v1] == VertexType.Z): continue
 
         v0a = phases[v0]
         v1a = phases[v1]
@@ -338,7 +341,7 @@ def match_pivot_gadget(g, matchf=None, num=-1):
         discard_edges = []
         for i,l in enumerate((v0n, v1n)):
             for n in l:
-                if types[n] != 1: 
+                if types[n] != VertexType.Z:
                     bad_match = True
                     break
                 ne = list(g.incident_edges(n))
@@ -349,11 +352,11 @@ def match_pivot_gadget(g, matchf=None, num=-1):
             if bad_match: break
         if bad_match: continue
                 
-        if any(types[w]!=1 for w in v0n): continue
-        if any(types[w]!=1 for w in v1n): continue
+        if any(types[w]!=VertexType.Z for w in v0n): continue
+        if any(types[w]!=VertexType.Z for w in v1n): continue
         # Both v0 and v1 are interior
         
-        v = g.add_vertex(1,-2,rs[v0],v1a)
+        v = g.add_vertex(VertexType.Z,-2,rs[v0],v1a)
         g.set_phase(v1, 0)
         g.set_qubit(v0,-1)
         g.update_phase_index(v1,v)
@@ -362,7 +365,7 @@ def match_pivot_gadget(g, matchf=None, num=-1):
         m.append([v0,v1,[],[v]])
         i += 1
         for c in discard_edges: candidates.discard(c)
-    g.add_edges(edge_list,1)
+    g.add_edges(edge_list,EdgeType.SIMPLE)
     return m
 
 
@@ -382,13 +385,13 @@ def match_pivot_boundary(g, matchf=None, num=-1):
     m = []
     while (num == -1 or i < num) and len(candidates) > 0:
         v = candidates.pop()
-        if types[v] != 1 or phases[v] not in (0,1): continue
+        if types[v] != VertexType.Z or phases[v] not in (0,1): continue
 
         good_vert = True
         w = None
         bound = None
         for n in g.neighbours(v):
-            if types[n] == 0: # v is on the boundary
+            if types[n] == VertexType.BOUNDARY:
                 good_vert = False
                 break
             if len(g.neighbours(n)) == 1: # v is a phase gadget
@@ -397,9 +400,9 @@ def match_pivot_boundary(g, matchf=None, num=-1):
             if n in consumed_vertices:
                 good_vert = False
                 break
-            boundaries = [b for b in g.neighbours(n) if types[b]==0]
-            if len(boundaries) != 1: # n is not on the boundary
-                continue        #, or it is connected to both an input and an output
+            boundaries = [b for b in g.neighbours(n) if types[b]==VertexType.BOUNDARY]
+            if len(boundaries) != 1: # n is not on the boundary,
+                continue             # or it is connected to both an input and an output
             if phases[n] and phases[n].denominator == 2:
                 w = n
                 bound = boundaries[0]
@@ -410,8 +413,8 @@ def match_pivot_boundary(g, matchf=None, num=-1):
         
         if bound in g.inputs: mod = 0.5
         else: mod = -0.5
-        v1 = g.add_vertex(1,-2,rs[w]+mod,phases[w])
-        v2 = g.add_vertex(1,-1,rs[w]+mod,0)
+        v1 = g.add_vertex(VertexType.Z,-2,rs[w]+mod,phases[w])
+        v2 = g.add_vertex(VertexType.Z,-1,rs[w]+mod,0)
         g.set_phase(w, 0)
         g.update_phase_index(w,v1)
         edge_list.append((w,v2) if w<v2 else (v2,w))
@@ -424,7 +427,7 @@ def match_pivot_boundary(g, matchf=None, num=-1):
         for n in g.neighbours(v): candidates.discard(n)
         for n in g.neighbours(w): candidates.discard(n)
 
-    g.add_edges(edge_list,2)
+    g.add_edges(edge_list, EdgeType.HADAMARD)
     return m
 
 def pivot(g, matches):
@@ -485,8 +488,8 @@ def pivot(g, matches):
                 new_e = (m[1-i], m[i+2][0])
                 if new_e[0] > new_e[1]: new_e = (new_e[1],new_e[0])
                 ne,nhe = etab.get(new_e, (0,0))
-                if g.edge_type(e) == 1: nhe += 1
-                elif g.edge_type(e) == 2: ne += 1
+                if g.edge_type(e) == EdgeType.SIMPLE: nhe += 1
+                elif g.edge_type(e) == EdgeType.HADAMARD: ne += 1
                 etab[new_e] = (ne,nhe)
                 rem_edges.append(e)
 
@@ -529,7 +532,7 @@ def match_lcomp_parallel(g, vertexf=None, num=-1, check_edge_types=False):
         if not (va == Fraction(1,2) or va == Fraction(3,2)): continue
 
         if check_edge_types and not (
-            all(g.edge_type(e) == 2 for e in g.incident_edges(v))
+            all(g.edge_type(e) == EdgeType.HADAMARD for e in g.incident_edges(v))
             ): continue
                 
         vn = list(g.neighbours(v))
@@ -608,7 +611,7 @@ def remove_ids(g, matches):
     rem = []
     for m in matches:
         rem.append(m[0])
-        e = (m[1],m[2])
+        e = (m[1],m[2]) if m[1] < m[2] else (m[2],m[1])
         if not e in etab: etab[e] = [0,0]
         etab[e][m[3]-1] += 1
     return (etab, rem, [], False)
@@ -631,6 +634,7 @@ def match_phase_gadgets(g):
             n = list(g.neighbours(v))[0]
             if phases[n] not in (0,1): continue # Not a real phase gadget (happens for scalar diagrams)
             if n in gadgets: continue # Not a real phase gadget (happens for scalar diagrams)
+            if n in g.inputs or n in g.outputs: continue # Not a real phase gadget (happens for non-unitary diagrams)
             gadgets[n] = v
             par = frozenset(set(g.neighbours(n)).difference({v}))
             if par in parities: parities[par].append(n)
@@ -713,9 +717,6 @@ def match_supplementarity(g):
                     taken.update(neigh)
                     candidates.difference_update(neigh)
                     break
-    #if m: 
-    #    print(m)
-        #if m[0][2] == 2: raise Exception("Good pair")
     return m
 
 def apply_supplementarity(g, matches):
@@ -743,6 +744,46 @@ def apply_supplementarity(g, matches):
                 for n in neigh:
                     g.add_to_phase(n,1)
         else: raise Exception("Shouldn't happen")
+    return ({}, rem, [], True)
+
+
+def match_copy(g, vertexf=None):
+    """Finds spiders with a 0 or pi phase that have a single neighbour,
+    and copies them through. Assumes that all the spiders are green and maximally fused."""
+    if vertexf != None: candidates = set([v for v in g.vertices() if vertexf(v)])
+    else: candidates = g.vertex_set()
+    phases = g.phases()
+    types = g.types()
+    m = []
+
+    while len(candidates) > 0:
+        v = candidates.pop()
+        if phases[v] not in (0,1) or types[v] != VertexType.Z or g.vertex_degree(v) != 1: continue
+        w = list(g.neighbours(v))[0]
+        if types[w] != VertexType.Z: continue
+        neigh = [n for n in g.neighbours(w) if n != v]
+        m.append((v,w,phases[v],phases[w],neigh))
+        candidates.discard(w)
+        candidates.difference_update(neigh)
+
+    return m
+
+def apply_copy(g, matches):
+    rem = []
+    types = g.types()
+    for v,w,a,alpha, neigh in matches:
+        rem.append(v)
+        rem.append(w)
+        g.scalar.add_power(-len(neigh)+1)
+        if a: g.scalar.add_phase(alpha)
+        for n in neigh: 
+            if types[n] == VertexType.BOUNDARY:
+                r = g.row(n) - 1 if n in g.outputs else g.row(n)+1
+                u = g.add_vertex(VertexType.Z, g.qubit(n), r, a)
+                e = g.edge((w,n))
+                et = g.edge_type(e)
+                g.add_edge((n,u), toggle_edge(et))
+            g.add_to_phase(n, a)
     return ({}, rem, [], True)
 
 
@@ -806,7 +847,7 @@ def apply_gadget_phasepoly(g, matches):
         for i in range(4):
             v1 = group[i]
             g.add_to_phase(v1, Fraction(5,4))
-            
+
             for j in range(i+1,4):
                 v2 = group[j]
                 f = frozenset({v1,v2})
@@ -817,10 +858,10 @@ def apply_gadget_phasepoly(g, matches):
                         phase = -phase
                         g.set_phase(n,0)
                 else:
-                    n = g.add_vertex(1,-1, rs[v2]+0.5)
-                    v = g.add_vertex(1,-2, rs[v2]+0.5)
+                    n = g.add_vertex(VertexType.Z,-1, rs[v2]+0.5)
+                    v = g.add_vertex(VertexType.Z,-2, rs[v2]+0.5)
                     phase = 0
-                    g.add_edges([(n,v),(v1,n),(v2,n)],2)
+                    g.add_edges([(n,v),(v1,n),(v2,n)],EdgeType.HADAMARD)
                 g.set_phase(v, phase + Fraction(3,4))
 
                 for k in range(j+1,4):
@@ -833,10 +874,10 @@ def apply_gadget_phasepoly(g, matches):
                             phase = -phase
                             g.set_phase(n,0)
                     else:
-                        n = g.add_vertex(1,-1, rs[v3]+0.5)
-                        v = g.add_vertex(1,-2, rs[v3]+0.5)
+                        n = g.add_vertex(VertexType.Z,-1, rs[v3]+0.5)
+                        v = g.add_vertex(VertexType.Z,-2, rs[v3]+0.5)
                         phase = 0
-                        g.add_edges([(n,v),(v1,n),(v2,n),(v3,n)],2)
+                        g.add_edges([(n,v),(v1,n),(v2,n),(v3,n)],EdgeType.HADAMARD)
                     g.set_phase(v, phase + Fraction(1,4))
         f = frozenset(group)
         if f in gadgets:

@@ -16,9 +16,13 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from fractions import Fraction
+from typing import Tuple, Dict, Any
+
 from .base import BaseGraph
 
-class GraphS(BaseGraph):
+from ..utils import VertexType, EdgeType, FractionLike, FloatInt
+
+class GraphS(BaseGraph[int,Tuple[int,int]]):
 	"""Purely Pythonic implementation of :class:`~graph.base.BaseGraph`."""
 	backend = 'simple'
 
@@ -26,17 +30,17 @@ class GraphS(BaseGraph):
 	#can be found in base.BaseGraph
 	def __init__(self):
 		BaseGraph.__init__(self)
-		self.graph = dict()
-		self._vindex = 0
-		self.nedges = 0
-		self.ty = dict()
-		self._phase = dict()
-		self._qindex = dict()
-		self._maxq = -1
-		self._rindex = dict()
-		self._maxr = -1
+		self.graph: Dict[int,Dict[int,EdgeType.Type]]	= dict()
+		self._vindex: int 								= 0
+		self.nedges: int 								= 0
+		self.ty: Dict[int,VertexType.Type]  			= dict()
+		self._phase: Dict[int, FractionLike]			= dict()
+		self._qindex: Dict[int, FloatInt]				= dict()
+		self._maxq: FloatInt							= -1
+		self._rindex: Dict[int, FloatInt] 				= dict()
+		self._maxr: FloatInt							= -1
 		
-		self._vdata = dict()
+		self._vdata: Dict[int,Any] 						= dict()
 		
 
 	def vindex(self): return self._vindex
@@ -52,12 +56,22 @@ class GraphS(BaseGraph):
 	def add_vertices(self, amount):
 		for i in range(self._vindex, self._vindex + amount):
 			self.graph[i] = dict()
-			self.ty[i] = 0
+			self.ty[i] = VertexType.BOUNDARY
 			self._phase[i] = 0
 		self._vindex += amount
 		return range(self._vindex - amount, self._vindex)
+	def add_vertex_indexed(self, index):
+		"""Adds a vertex that is guaranteed to have the chosen index (i.e. 'name').
+		If the index isn't available, raises a ValueError.
+		This method is used in the editor to support undo, which requires vertices
+		to preserve their index."""
+		if index in self.graph: raise ValueError("Vertex with this index already exists")
+		if index >= self._vindex: self._vindex = index+1
+		self.graph[index] = dict()
+		self.ty[index] = VertexType.BOUNDARY
+		self._phase[index] = 0
 
-	def add_edges(self, edges, edgetype=1):
+	def add_edges(self, edges, edgetype=EdgeType.SIMPLE):
 		for s,t in edges:
 			self.nedges += 1
 			self.graph[s][t] = edgetype

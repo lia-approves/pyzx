@@ -15,29 +15,34 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from .simplify import *
-from .graph.base import BaseGraph
-
 from fractions import Fraction
 from itertools import combinations
+from typing import Dict, List, Tuple
 
 
-def match_h2(g: BaseGraph):
+from .utils import EdgeType, VertexType, toggle_edge, FractionLike, FloatInt
+from .simplify import *
+from .graph.base import BaseGraph, ET, VT
+
+
+
+
+def match_h2(g: BaseGraph[VT,ET]) -> List[VT]:
     m = set()
     ty = g.types()
     for v in g.vertices():
-        if ty[v] == 3 and g.vertex_degree(v) == 2:
+        if ty[v] == VertexType.H_BOX and g.vertex_degree(v) == 2:
             n1,n2 = g.neighbours(v)
             if n1 not in m and n2 not in m: m.add(v)
 
     return list(m)
 
-def h2(g: BaseGraph, m):
+def h2(g: BaseGraph[VT,ET], m: List[VT]):
     del_e = []
-    etab = dict()
+    etab: Dict[ET,List[int]] = dict()
     for h in m:
         n1,n2 = g.neighbours(h)
-        new_e = (n1,n2) if n1 < n2 else (n2,n1)
+        new_e = g.edge(n1,n2)
         e1, e2 = g.incident_edges(h)
         if g.edge_type(e1) != g.edge_type(e2):
             if new_e in etab: etab[new_e][0] += 1
@@ -52,8 +57,19 @@ def h2(g: BaseGraph, m):
     g.remove_vertices(m)
     g.add_edge_table(etab)
 
+hpivot_match_output = List[Tuple[
+            VT,
+            VT,
+            VT,
+            List[VT],
+            List[VT],
+            List[List[VT]],
+            List[Tuple[FractionLike,List[VT]]]
+            ]]
 
-def match_hpivot(g, matchf=None):
+def match_hpivot(
+    g: BaseGraph[VT,ET], matchf=None
+    ) -> hpivot_match_output:
     """Finds a matching of the hyper-pivot rule. Note this currently assumes
     hboxes don't have phases.
 
@@ -74,7 +90,7 @@ def match_hpivot(g, matchf=None):
         if not (
             (matchf is None or matchf(h)) and
             g.vertex_degree(h) == 2 and
-            types[h] == 3 and
+            types[h] == VertexType.H_BOX and
             phases[h] == 1
         ): continue
 
@@ -85,10 +101,10 @@ def match_hpivot(g, matchf=None):
 
         if (len(v0n.intersection(v1n)) > 1): continue
 
-        v0b = [v for v in v0n if types[v] == 0]
-        v0h = [v for v in v0n if types[v] == 3 and v != h]
-        v1b = [v for v in v1n if types[v] == 0]
-        v1h = [v for v in v1n if types[v] == 3 and v != h]
+        v0b = [v for v in v0n if types[v] == VertexType.BOUNDARY]
+        v0h = [v for v in v0n if types[v] == VertexType.H_BOX and v != h]
+        v1b = [v for v in v1n if types[v] == VertexType.BOUNDARY]
+        v1h = [v for v in v1n if types[v] == VertexType.H_BOX and v != h]
 
         # check that at least one of v0 or v1 has all pi phases on adjacent
         # hboxes.
@@ -110,8 +126,8 @@ def match_hpivot(g, matchf=None):
 
 
         if not (
-            all(all(types[v] == 1 for v in vs) for vs in v0nn) and
-            all(all(types[v] == 1 for v in vs[1]) for vs in v1nn) and
+            all(all(types[v] == VertexType.Z for v in vs) for vs in v0nn) and
+            all(all(types[v] == VertexType.Z for v in vs[1]) for vs in v1nn) and
             len(v0b) + len(v1b) <= 1 and
             len(v0b) + len(v0h) + 1 == len(v0n) and
             len(v1b) + len(v1h) + 1 == len(v1n)
@@ -125,7 +141,7 @@ def match_hpivot(g, matchf=None):
     return m
 
 
-def hpivot(g, m):
+def hpivot(g: BaseGraph[VT,ET], m: hpivot_match_output) -> None:
     if len(m) == 0: return None
 
     types = g.types()
@@ -133,27 +149,27 @@ def hpivot(g, m):
     # # cache hboxes
     # hboxes = dict()
     # for h in g.vertices():
-    #     if types[h] != 3: continue
+    #     if types[h] != VertexType.H_BOX: continue
     #     nhd = tuple(sorted(g.neighbours(h)))
     #     hboxes[nhd] = h
 
 
     h, v0, v1, v0b, v1b, v0nn, v1nn = m[0]
-    g.remove_vertices([v for v in g.neighbours(v0) if types[v] == 3])
-    g.remove_vertices([v for v in g.neighbours(v1) if types[v] == 3])
+    g.remove_vertices([v for v in g.neighbours(v0) if types[v] == VertexType.H_BOX])
+    g.remove_vertices([v for v in g.neighbours(v1) if types[v] == VertexType.H_BOX])
     
     if len(v0b) == 0:
         g.remove_vertex(v0)
     else:
         e = g.edge(v0, v0b[0])
-        g.set_edge_type(e, 2 if g.edge_type(e) == 1 else 1)
+        g.set_edge_type(e, toggle_edge(g.edge_type(e)))
         v0nn.append([v0])
     
     if len(v1b) == 0:
         g.remove_vertex(v1)
     else:
         e = g.edge(v1, v1b[0])
-        g.set_edge_type(e, 2 if g.edge_type(e) == 1 else 1)
+        g.set_edge_type(e, toggle_edge(g.edge_type(e)))
         v1nn.append((Fraction(1,1), [v1]))
 
     for phase,ws in v1nn:
@@ -172,22 +188,22 @@ def hpivot(g, m):
                 #     print("adding %s to %s" % (f_phase, g.phase(h0)))
                 #     g.add_to_phase(h0, f_phase)
                 # else:
-                h0 = g.add_vertex(3)
+                h0 = g.add_vertex(VertexType.H_BOX)
                 g.set_phase(h0, f_phase)
-                q = 0
-                r = 0
+                q: FloatInt = 0
+                r: FloatInt = 0
                 for u in us:
                     q += g.qubit(u)
                     r += g.row(u)
-                    g.add_edge((h0,u))
+                    g.add_edge(g.edge(h0,u))
                 g.set_qubit(h0, q / len(us) - 0.4)
                 g.set_row(h0, r / len(us) + 0.4)
 
-def match_par_hbox(g):
-    hs = dict()
+def match_par_hbox(g: BaseGraph[VT,ET]) -> List[List[VT]]:
+    hs: Dict[Tuple[VT,...],List[VT]] = dict()
     types = g.types()
     for h in g.vertices():
-        if types[h] != 3: continue
+        if types[h] != VertexType.H_BOX: continue
         nhd = tuple(sorted(g.neighbours(h)))
         if nhd in hs:
             hs[nhd].append(h)
@@ -195,18 +211,17 @@ def match_par_hbox(g):
             hs[nhd] = [h]
     return list(filter(lambda l: len(l) > 1, hs.values()))
 
-def par_hbox(g, ms):
+def par_hbox(g: BaseGraph[VT,ET], ms: List[List[VT]]) -> None:
     for m in ms:
         p = sum(g.phase(h) for h in m) % 2
-        for h in m[1:]: g.remove_vertex(h)
+        g.remove_vertices(m[1:])
         if p == 0: g.remove_vertex(m[0])
         else: g.set_phase(m[0], p)
 
-def match_zero_hbox(g):
+def match_zero_hbox(g: BaseGraph[VT,ET]) -> List[VT]:
     types = g.types()
     phases = g.phases()
-    return [v for v in g.vertices() if types[v] == 3 and phases[v] == 0]
+    return [v for v in g.vertices() if types[v] == VertexType.H_BOX and phases[v] == 0]
 
-def zero_hbox(g, ms):
-    for h in ms:
-        g.remove_vertex(h)
+def zero_hbox(g: BaseGraph[VT,ET], m: List[VT]) -> None:
+    g.remove_vertices(m)

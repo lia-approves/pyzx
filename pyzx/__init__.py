@@ -15,6 +15,8 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+__version__ = "0.5.1"
+
 from .graph.graph import Graph
 from .linalg import Mat2
 from .drawing import *
@@ -37,6 +39,7 @@ from . import hsimplify
 from . import d3
 from . import tikz
 from . import simulate
+from . import editor
 
 
 if __name__ == '__main__':

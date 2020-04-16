@@ -16,20 +16,29 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import json
+import os
 from fractions import Fraction
 
 __all__ = ['init', 'draw']
 
 try:
-    from IPython.display import display, HTML
+    from IPython.display import display, HTML # type: ignore
     in_notebook = True
-    javascript_location = '../js'
+    javascript_location = os.path.join(os.path.dirname(__file__), 'js')
+    d3_load_string = 'require.config({paths: {d3: "https://d3js.org/d3.v5.min"} });'
+    relpath = os.path.relpath(javascript_location, os.getcwd())
+    if relpath.count('..') <= 1:
+        javascript_location = os.path.relpath(javascript_location, os.getcwd())
+        d3_load_string = 'require.config({{baseUrl: "{}",paths: {{d3: "d3.v5.min"}} }});'.format(
+                            javascript_location.replace('\\','/'))
 except ImportError:
     in_notebook = False
     javascript_location = '/js'
+    d3_load_string = 'require.config({paths: {d3: "https://d3js.org/d3.v5.min"} });'
     try:
-        from browser import document, html
+        from browser import document, html # type: ignore
         in_webpage = True
+        d3_load_string = 'require.config({baseUrl: "/js", paths: {d3: "d3.v5.min"} });'
     except ImportError:
         in_webpage = False
 
@@ -37,25 +46,7 @@ except ImportError:
 
 _d3_display_seq = 0
 
-# javascript_location = '../js'
-
-# TODO: avoid duplicate (copied from drawing.py)
-def phase_to_s(a, t):
-    if (a == 0 and t != 3): return ''
-    if (a == 1 and t == 3): return ''
-    if not isinstance(a, Fraction):
-        a = Fraction(a)
-
-    simstr = ''
-    if a.denominator > 256:
-        a = a.limit_denominator(256)
-        simstr = '~'
-
-    ns = '' if a.numerator == 1 else str(a.numerator)
-    ds = '' if a.denominator == 1 else '/' + str(a.denominator)
-
-    # unicode 0x03c0 = pi
-    return simstr + ns + '\u03c0' + ds
+from .drawing import phase_to_s
 
 def draw(g, scale=None, auto_hbox=True, labels=False):
     global _d3_display_seq
@@ -67,7 +58,7 @@ def draw(g, scale=None, auto_hbox=True, labels=False):
         g = g.to_graph(zh=True)
 
     _d3_display_seq += 1
-    seq = _d3_display_seq
+    graph_id = str(_d3_display_seq)
 
     if scale == None:
         scale = 800 / (g.depth() + 2)
@@ -90,28 +81,32 @@ def draw(g, scale=None, auto_hbox=True, labels=False):
               'target': str(g.edge_t(e)),
               't': g.edge_type(e) } for e in g.edges()]
     graphj = json.dumps({'nodes': nodes, 'links': links})
-    text = """
-        <div style="overflow:auto" id="graph-output-{0}"></div>
-        <script type="text/javascript">
-        require.config({{ baseUrl: "{1}",
-                         paths: {{d3: "d3.v4.min"}} }});
-        require(['pyzx'], function(pyzx) {{
-            pyzx.showGraph('#graph-output-{0}',
-            JSON.parse('{2}'), {3}, {4}, {5}, {6}, {7}, {8});
-        }});
-        </script>
-        """.format(seq, javascript_location, graphj, w, h, scale, node_size,
-            'true' if auto_hbox else 'false',
-            'true' if labels else 'false')
+    with open(os.path.join(javascript_location, 'zx_viewer.js'), 'r') as f:
+        viewer_code = f.read()
+    text = """<div style="overflow:auto" id="graph-output-{id}"></div>
+<script type="text/javascript">
+{d3_load}
+{viewer_code}
+</script>
+<script type="text/javascript">
+require(['zx_viewer'], function(zx_viewer) {{
+    zx_viewer.showGraph('#graph-output-{id}',
+    JSON.parse('{graph}'), {width}, {height}, {scale}, {node_size}, {hbox}, {labels});
+}});
+</script>""".format(id = graph_id, d3_load = d3_load_string, viewer_code=viewer_code, 
+                    graph = graphj, 
+                   width=w, height=h, scale=scale, node_size=node_size,
+                   hbox = 'true' if auto_hbox else 'false',
+                   labels='true' if labels else 'false')
     if in_notebook:
         display(HTML(text))
     elif in_webpage:
-        d = html.DIV(style={"overflow": "auto"}, id="graph-output-{}".format(seq))
+        d = html.DIV(style={"overflow": "auto"}, id="graph-output-{}".format(graph_id))
         source = """
-        require(['pyzx'], function(pyzx) {{
-            pyzx.showGraph('#graph-output-{0}',
-            JSON.parse('{2}'), {3}, {4}, {5});
+        require(['zx_viewer'], function(zx_viewer) {{
+            zx_viewer.showGraph('#graph-output-{0}',
+            JSON.parse('{1}'), {2}, {3}, {4}, false, false);
         }});
-        """.format(seq, javascript_location, graphj, w, h, node_size)
+        """.format(graph_id, graphj, str(w), str(h), str(node_size))
         s = html.SCRIPT(source, type="text/javascript")
         return d,s
