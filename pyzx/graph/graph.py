@@ -1,19 +1,18 @@
 # PyZX - Python library for quantum circuit rewriting 
-#        and optimisation using the ZX-calculus
+#        and optimization using the ZX-calculus
 # Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#    http://www.apache.org/licenses/LICENSE-2.0
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 from typing import Optional
 
@@ -23,11 +22,18 @@ from .graph_s import GraphS
 backends = {'simple': True}
 
 def Graph(backend:Optional[str]=None) -> BaseGraph:
-	"""Returns an instance of an implementation of :class:`~graph.base.BaseGraph`. 
-	By default :class:`~graph.graph_s.GraphS` is used. 
+	"""Returns an instance of an implementation of :class:`~pyzx.graph.base.BaseGraph`. 
+	By default :class:`~pyzx.graph.graph_s.GraphS` is used. 
 	Currently ``backend`` is allowed to be `simple` (for the default),
 	or 'graph_tool' and 'igraph'.
-	**Note**: graph_tool is currently not fully supported."""
+	This method is the preferred way to instantiate a ZX-diagram in PyZX.
+
+	Example:
+		To construct an empty ZX-diagram, just write::
+
+			g = zx.Graph()
+		
+	"""
 	if backend is None: backend = 'simple'
 	if backend not in backends:
 		raise KeyError("Unavailable backend '{}'".format(backend))
@@ -36,6 +42,9 @@ def Graph(backend:Optional[str]=None) -> BaseGraph:
 		return GraphGT()
 	if backend == 'igraph': return GraphIG()
 	return GraphS()
+
+Graph.from_json = GraphS.from_json # type: ignore
+Graph.from_tikz = GraphS.from_tikz # type: ignore
 
 try:
 	import graph_tool.all as gt

@@ -1,20 +1,19 @@
 # PyZX - Python library for quantum circuit rewriting 
-#        and optimisation using the ZX-calculus
-# Copyright (C) 2019 - Aleks Kissinger, John van de Wetering,
-#                      and Arianne Meijer-van de Griend
+#        and optimization using the ZX-calculus
+# Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#    http://www.apache.org/licenses/LICENSE-2.0
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 
 import sys
 if __name__ == '__main__':
@@ -22,15 +21,19 @@ if __name__ == '__main__':
 from pyzx.generate import cnots as generate_cnots
 from pyzx.circuit import Circuit, gates
 from pyzx.linalg import Mat2
-try:
-    import numpy as np
-except:
-    np = None
+
+# try:
+#     import numpy as np
+# except:
+#     np = None
+# NOTE: numpy is not used optionally in code below.
+
+import numpy as np
 
 class CNOT_tracker(Circuit):
     def __init__(self, n_qubits, **kwargs):
         super().__init__(n_qubits, **kwargs)
-        self.matrix = Mat2(np.identity(n_qubits))
+        self.matrix = Mat2.id(n_qubits)
         self.row_perm = np.arange(n_qubits)
         self.col_perm = np.arange(n_qubits)
         self.n_qubits = n_qubits
@@ -72,8 +75,8 @@ class CNOT_tracker(Circuit):
 
     def to_qasm(self):
         qasm = super().to_qasm()
-        initial_perm = "// Initial wiring: " + str(self.row_perm.tolist())
-        end_perm = "// Resulting wiring: " + str(self.col_perm.tolist())
+        initial_perm = "// Initial wiring: " + str(self.row_perm)
+        end_perm = "// Resulting wiring: " + str(self.col_perm)
         return '\n'.join([initial_perm, end_perm, qasm])
 
     @staticmethod
@@ -84,7 +87,7 @@ class CNOT_tracker(Circuit):
         return new_circuit
 
     def update_matrix(self):
-        self.matrix = Mat2(np.identity(self.n_qubits))
+        self.matrix = Mat2.id(self.n_qubits)
         for gate in self.gates:
             if hasattr(gate, "name") and gate.name == "CNOT":
                 self.matrix.row_add(gate.control, gate.target)
@@ -111,7 +114,7 @@ def build_random_parity_map(qubits, n_cnots, circuit=None):
         circuit = [circuit]
     g = generate_cnots(qubits=qubits, depth=n_cnots)
     c = Circuit.from_graph(g)
-    matrix = Mat2(np.identity(qubits))
+    matrix = Mat2.id(qubits)
     for gate in c.gates:
         matrix.row_add(gate.control, gate.target)
         for c in circuit:

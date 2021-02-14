@@ -1,19 +1,19 @@
 # PyZX - Python library for quantum circuit rewriting 
-#        and optimisation using the ZX-calculus
+#        and optimization using the ZX-calculus
 # Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#    http://www.apache.org/licenses/LICENSE-2.0
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 
 import random
 import sys
@@ -24,8 +24,7 @@ if __name__ == '__main__':
 from pyzx.tensor import compare_tensors
 from pyzx.generate import cliffordT
 from pyzx.simplify import *
-from pyzx.extract import *
-from pyzx.phasepoly import *
+from pyzx.extract import extract_circuit
 from pyzx.circuit import Circuit
 from pyzx.optimize import *
 
@@ -51,20 +50,16 @@ def do_tests(qubits, depth, iterations, test_clifford_graph=True):
             steps.append("clifford_simp")
             if test_clifford_graph: compare(t, g)
             
-            c = streaming_extract(g)
-            steps.append("streaming_extract")
+            c = extract_circuit(g)
+            steps.append("extract_circuit")
             compare(t, c, False)
 
             c = c.to_basic_gates()
             steps.append("to_basic_gates")
             compare(t, c, False)
 
-            c2, blocks = circuit_phase_polynomial_blocks(c, optimize=False)
-            steps.append("phase_polynomial")
-            compare(t, c2, False)
-
-            c2, blocks = circuit_phase_polynomial_blocks(c, optimize=True)
-            steps[-1] = "phase_polynomial_optimized"
+            c2 = basic_optimization(c)
+            steps.append("basic_optimization")
             compare(t, c2, False)
 
             steps = []
@@ -73,21 +68,9 @@ def do_tests(qubits, depth, iterations, test_clifford_graph=True):
             steps.append("full_reduce")
             if test_clifford_graph: compare(t, g)
 
-            c = modified_extract(g)
-            steps.append("modified_extract")
+            c = extract_circuit(g)
+            steps.append("extract_circuit")
             compare(t,c,False)
-
-            steps = []
-            g = circ.copy()
-            full_reduce(g, quiet=True)
-            steps.append("full_reduce")
-            c = streaming_extract(g).to_basic_gates()
-            steps.append("streaming_extract")
-            compare(t, c, False)
-
-            c2, blocks = circuit_phase_polynomial_blocks(c, optimize=True)
-            steps[-1] = "phase_polynomial_optimized"
-            compare(t, c2, False)
 
             steps = []
             g = circ.copy()

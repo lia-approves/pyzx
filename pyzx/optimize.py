@@ -1,43 +1,66 @@
 # PyZX - Python library for quantum circuit rewriting 
-#        and optimisation using the ZX-calculus
+#        and optimization using the ZX-calculus
 # Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#    http://www.apache.org/licenses/LICENSE-2.0
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""This module implements several optimization methods on ``Circuit``\ s. 
+The function :func:`basic_optimization` runs a set of back-and-forth gate commutation and cancellation routines.
+:func:`phase_block_optimize` does phase polynomial optimization using the TODD algorithm,
+and :func:`full_optimize` combines these two methods."""
+
+from typing import overload, Tuple, List, Union, Dict, Set
+from typing_extensions import Literal
 
 from .circuit import Circuit
-from .circuit.gates import ZPhase, XPhase, CNOT, CZ, ParityPhase, NOT, HAD, SWAP, S, Z
+from .circuit.gates import Gate, ZPhase, XPhase, CNOT, CZ, ParityPhase, NOT, HAD, SWAP, S, Z
 from .extract import permutation_as_swaps
 from .todd import todd_simp
 
-__all__ = ['basic_optimization', 'phase_block_optimize']
+__all__ = ['full_optimize', 'basic_optimization', 'phase_block_optimize']
 
-def full_optimize(circuit, quiet=True):
+def full_optimize(circuit: Circuit, quiet:bool=True) -> Circuit:
+    """Optimizes the circuit using first some basic commutation and cancellation rules,
+    and then a dedicated phase polynomial optimization strategy involving the TODD algorithm.
+
+    Args:
+        circuit: Circuit to be optimized.
+        quiet: Whether to print some progress indicators."""
     c = basic_optimization(circuit.to_basic_gates())
     c = phase_block_optimize(c, quiet=quiet)
     return basic_optimization(c.to_basic_gates())
 
-def basic_optimization(circuit, do_swaps=True, quiet=True):
+def basic_optimization(circuit: Circuit, do_swaps:bool=True, quiet:bool=True) -> Circuit:
+    """Optimizes the circuit using a strategy that involves delayed placement of gates
+    so that more matches for gate cancellations are found. Specifically tries to minimize
+    the number of Hadamard gates to improve the effectiveness 
+    of phase-polynomial optimization techniques.
+
+    Args:
+        circuit: Circuit to be optimized.
+        do_swaps: When set uses some rules transforming CNOT gates into SWAP gates. Generally leads to better results, but messes up architecture-aware placement of 2-qubit gates.
+        quiet: Whether to print some progress indicators.
+    """
     if not isinstance(circuit, Circuit):
         raise TypeError("Input must be a Circuit")
     o = Optimizer(circuit)
     return o.parse_circuit(do_swaps=do_swaps,quiet=quiet)
 
-def toggle_element(l, e):
+def toggle_element(l:list, e:object) -> None:
     if e in l: l.remove(e)
     else: l.append(e)
 
-def swap_element(l, e1, e2):
+def swap_element(l:list, e1:object, e2:object) -> None:
     if e1 in l and e2 not in l:
         l.remove(e1)
         l.append(e2)
@@ -45,7 +68,7 @@ def swap_element(l, e1, e2):
         l.remove(e2)
         l.append(e1)
 
-def stats(circ):
+def stats(circ: Circuit) -> Tuple[int,int,int]:
     two_qubit = 0
     had = 0
     non_pauli = 0
@@ -54,17 +77,43 @@ def stats(circ):
             two_qubit += 1
         elif g.name == 'HAD':
             had += 1
-        elif g.name != 'NOT' and g.phase != 1:
+        elif g.name != 'NOT' and g.phase != 1: # type: ignore
             non_pauli += 1
     return had, two_qubit, non_pauli
 
-class Optimizer:
-    def __init__(self, circuit):
-        self.circuit = circuit
-        self.qubits = circuit.qubits
-        self.minimize_czs = False
+class Optimizer(object):
+    """Helper class that implements the optimizations of :func:`basic_optimization`.
+    Works by doing alternating forward and backward 'passes' through a circuit.
+    During a pass, we iteratively consume gates, while 
+    keeping track of a stack of mutually commuting gates on each qubit.
+    When the gate can be combined with a gate on the stack, this is done.
+    If it doesn't combine, but commutes with the gates on the stack, it is added to the stack.
+    If it doesn't commute, the stack is reset."""
+    def __init__(self, circuit: Circuit) -> None:
+        self.circuit: Circuit = circuit
+        self.qubits: int = circuit.qubits
+        self.minimize_czs: bool = False
     
-    def parse_circuit(self, separate_correction=False, max_iterations=1000, do_swaps=True, quiet=True):
+    @overload
+    def parse_circuit(self, 
+            separate_correction:Literal[False]=False, 
+            max_iterations:int=1000, 
+            do_swaps:bool=True, 
+            quiet:bool=True) -> Circuit: pass
+
+    @overload
+    def parse_circuit(self, 
+            separate_correction:Literal[True], 
+            max_iterations:int=1000, 
+            do_swaps:bool=True, 
+            quiet:bool=True) -> Tuple[Circuit, List[Gate]]: pass
+
+    def parse_circuit(self, 
+            separate_correction:bool=False, 
+            max_iterations:int=1000, 
+            do_swaps:bool=True, 
+            quiet:bool=True
+            ) -> Union[Circuit, Tuple[Circuit, List[Gate]]]:
         """Repeatedly does forward and backward passes trough the circuit, 
         until no more improvements are found.
         When ``separate_correction`` is True, it returns the list of NOT, Z and SWAP gates that is 
@@ -100,16 +149,14 @@ class Optimizer:
         else:
             return self.circuit, correction
     
-    def parse_forward(self):
+    def parse_forward(self) -> Tuple[Circuit, List[Gate]]:
         """Does a single forward pass trough self.circuit.gates."""
-        self.gates = {i:list() for i in range(self.qubits)}
-        self.available = {i:list() for i in range(self.qubits)}
+        self.gates: Dict[int,List[Gate]] = {i:list() for i in range(self.qubits)}
+        self.available: Dict[int,List[Gate]] = {i:list() for i in range(self.qubits)}
         self.availty = {i: 1 for i in range(self.qubits)}
-        self.parsed = []
-        self.parsed_indices = set()
-        self.hadamards = []
-        self.nots = []
-        self.zs = []
+        self.hadamards: List[int] = []
+        self.nots: List[int] = []
+        self.zs: List[int] = []
         self.permutation = {i:i for i in range(self.qubits)}
         self.gcount = 0
         for g in self.circuit.gates:
@@ -131,7 +178,7 @@ class Optimizer:
         c = Circuit(self.qubits)
         c.gates = self.topological_sort_gates()
         
-        correction = []
+        correction: List[Gate] = []
         for t in self.nots:
             n = NOT(t)
             correction.append(n)
@@ -144,13 +191,13 @@ class Optimizer:
             #c.gates.extend(SWAP(a,b).to_basic_gates())
         return c, correction
 
-    def topological_sort_gates(self):
+    def topological_sort_gates(self) -> List[Gate]:
         """self.gates is a a {qubit:[list of gates]} dictionary. This function consumes this dictionary and outputs a
         single list of gates, with the gates in the correct order.
         Note that 2-qubit gates are present in two entries in the dictionary and are identified with an ``index`` parameter."""
         output = []
         while any(self.gates.values()):
-            available_indices = set()
+            available_indices: Set[int] = set()
             for q, gs in self.gates.items():
                 while gs:
                     g = gs[0]
@@ -158,11 +205,11 @@ class Optimizer:
                         output.append(gs.pop(0))
                     elif g.index in available_indices:
                         available_indices.remove(g.index)
-                        q2 = g.target if q == g.control else g.control
+                        q2 = g.target if q == g.control else g.control # type: ignore
                         self.gates[q2].remove(g)
                         output.append(gs.pop(0))
                     else:
-                        ty = 1 if (g.name == 'CZ' or g.control == q) else 2
+                        ty = 1 if (g.name == 'CZ' or g.control == q) else 2 # type: ignore
                         available_indices.add(g.index)
                         remove = []
                         for i, g2 in enumerate(gs[1:]):
@@ -170,10 +217,11 @@ class Optimizer:
                                 output.append(g2)
                                 remove.append(i)
                             elif g2.name not in ('CZ', 'CNOT'): break
-                            elif (ty == 1 and (g2.name == 'CZ' or g2.control == q)) or (ty == 2 and g2.name == 'CNOT' and g2.target == q):
+                            elif ((ty == 1 and (g2.name == 'CZ' or g2.control == q)) or # type: ignore
+                                  (ty == 2 and g2.name == 'CNOT' and g2.target == q)): # type: ignore
                                 if g2.index in available_indices:
                                     available_indices.remove(g2.index)
-                                    q2 = g2.target if q == g2.control else g2.control
+                                    q2 = g2.target if q == g2.control else g2.control # type: ignore
                                     self.gates[q2].remove(g2)
                                     output.append(g2)
                                     remove.append(i)
@@ -187,7 +235,7 @@ class Optimizer:
         return output
 
     
-    def add_hadamard(self, t):
+    def add_hadamard(self, t: int) -> None:
         """Called by ``parse_gate`` to add a Hadamard gate to the output."""
         h = HAD(t)
         h.index = self.gcount
@@ -197,14 +245,14 @@ class Optimizer:
         self.available[t] = list()
         self.availty[t] = 1
     
-    def add_gate(self, t, g):
+    def add_gate(self, t: int, g: Gate) -> None:
         """Helper function for ``add_cz`` and ``add_cnot`` to add a single qubit gate to the output."""
         g.index = self.gcount
         self.gcount += 1
         self.gates[t].append(g)
         self.available[t].append(g)
     
-    def add_cz(self, cz):
+    def add_cz(self, cz: CZ) -> None:
         """Called by ``parse_gate`` to add a CZ gate to the output.
         Does some non-trivial logic to see whether the CZ-gate can be cancelled against a CNOT or CZ gate."""
         t1, t2 = cz.control, cz.target
@@ -213,7 +261,7 @@ class Optimizer:
         if self.minimize_czs:
             for c,t in [(t1,t2),(t2,t1)]:
                 for g in self.available[c]:
-                    if g.name == 'CNOT' and g.control == c and g.target == t:
+                    if g.name == 'CNOT' and g.control == c and g.target == t: # type: ignore[attr-defined]
                         if self.availty[t] == 2:
                             if g in self.available[t]: # The gate is also available on the target qubit
                                 found_match = True
@@ -291,7 +339,7 @@ class Optimizer:
             self.available[t1].append(cz)
             self.available[t2].append(cz)
     
-    def add_cnot(self, cnot):
+    def add_cnot(self, cnot: CNOT) -> None:
         """Called by ``parse_gate`` to parse a CNOT gate.
         Does some non-trivial logic to see whether the CNOT gate can be cancelled against another CNOT gate on the same qubits."""
         c, t = cnot.control, cnot.target
@@ -350,7 +398,7 @@ class Optimizer:
             self.available[c].append(cnot)
             self.available[t].append(cnot)
     
-    def parse_gate(self, g):
+    def parse_gate(self, g: Gate) -> None:
         """The main function of the optimization. It records whether a gate needs to be placed at the specified location
         'right now', or whether we can postpone the placement until hopefully it is cancelled against some future gate.
         Only supports ZPhase, HAD, CNOT and CZ gates. """
@@ -431,7 +479,7 @@ class Optimizer:
                 self.add_hadamard(t1)
                 self.add_hadamard(t2)
             if t1 not in self.hadamards and t2 not in self.hadamards:
-                self.add_cz(g)
+                self.add_cz(g) # type: ignore
             # Exactly one of t1 and t2 has a hadamard
             # So the CZ commutes trough and becomes a CNOT
             elif t1 in self.hadamards:
@@ -452,16 +500,16 @@ class Optimizer:
             if c in self.hadamards and t in self.hadamards:
                 g.control = t
                 g.target = c
-                self.add_cnot(g)
+                self.add_cnot(g) # type: ignore
             elif c not in self.hadamards and t not in self.hadamards:
-                self.add_cnot(g)
+                self.add_cnot(g) # type: ignore
             # If there is a HAD on the target, the CNOT commutes trough to become a CZ
             elif t in self.hadamards:
                 cz = CZ(c if c<t else t, c if c>t else t)
                 self.add_cz(cz)
             else: # Only the control has a hadamard gate in front of it
                 self.add_hadamard(c)
-                self.add_cnot(g)
+                self.add_cnot(g) # type: ignore
         
         else:
             raise TypeError("Unknown gate {}".format(str(g)))
@@ -469,9 +517,9 @@ class Optimizer:
 
 
 
-def greedy_consume_gates(gates, qubits):
+def greedy_consume_gates(gates: Dict[int, List[Gate]], qubits: int) -> Tuple[List[Gate],List[HAD]]:
     """Tries to consume as many gates as possible into a phase-polynomial block, by pushing gates past hadamards to the beginning
-    as long as that is possible.
+    as long as that is possible. Used by :func:`phase_block_optimize`.
 
     ``gates`` should be a {qubits:[list of gates]} dictionary, while ``qubits`` is the amount of qubits in the circuit.
     Returns a tuple (list of gates, list of hadamards)."""
@@ -605,7 +653,25 @@ def greedy_consume_gates(gates, qubits):
     return block, hadamards
 
 
-def phase_block_optimize(circuit, pre_optimize=True, quiet=True):
+def phase_block_optimize(circuit: Circuit, pre_optimize:bool=True, quiet:bool=True) -> Circuit:
+    """Optimizes the given circuit, by cutting it into phase polynomial pieces, and
+    using the `TODD algorithm <https://iopscience.iop.org/article/10.1088/2058-9565/aad604/meta>`_ 
+    to optimize each of these phase polynomials. 
+    The phase-polynomial circuits are then resynthesized using the 
+    `parity network <https://iopscience.iop.org/article/10.1088/2058-9565/aad8ca/meta>`_ algorithm.
+    
+    Note:
+        Only works with Clifford+T circuits. Will give wrong output when fed smaller rotation gates, or Toffoli-like gates.
+        Depending on the number of qubits and T-gates this function can take a long time to run.
+        It can be sped up somewhat by using the `TOpt implementation of TODD <https://github.com/Luke-Heyfron/TOpt>`_.
+        If this is installed, point towards it using ``zx.settings.topt_command``, such as for instance 
+        ``zx.settings.topt_command = ['wsl', '../TOpt']`` for running it in the Windows Subsystem for Linux.
+
+    Args:
+        circuit: The circuit to be optimized.
+        pre_optimize: Whether to call :func:`basic_optimization` first.
+        quiet: Whether to print some progress indicators. Helpful when execution time is long. 
+    """
     qubits = circuit.qubits
     o = Optimizer(circuit)
     if pre_optimize:
@@ -632,7 +698,7 @@ def phase_block_optimize(circuit, pre_optimize=True, quiet=True):
 
     for i, g in enumerate(circuit.gates):
         g = g.copy()
-        g.index = i        
+        g.index = i
         if g.name in ('CNOT', 'CZ'):
             gates[g.control].append(g)
             gates[g.target].append(g)

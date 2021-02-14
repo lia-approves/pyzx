@@ -1,6 +1,8 @@
 ## PyZX
 
 [![Unitary Fund](https://img.shields.io/badge/Supported%20By-UNITARY%20FUND-brightgreen.svg?style=for-the-badge)](http://unitary.fund)
+[![CQC Support](https://github.com/Quantomatic/pyzx/raw/master/images/cqc-banner-small.png)](https://cambridgequantum.com/)
+[![PyPI version](https://badge.fury.io/py/pyzx.svg)](https://badge.fury.io/py/pyzx)
 
 PyZX (pronounce as *Pisics*) is a **Py**thon tool implementing the theory of **ZX**-calculus for the creation, visualisation, and automated rewriting of large-scale quantum circuits. Please watch [this 2-minute video](https://www.youtube.com/watch?v=iC-KVdB8pf0) for a short introduction.
 
@@ -25,7 +27,9 @@ The ZX-calculus is a set of rewrite rules for ZX-diagrams. There are various ext
 ## Installation
 
 If you wish to use PyZX as a Python module for use in other projects, we recommend installing via pip:
-```pip install pyzx```
+```
+    pip install pyzx
+```
 
 If you want to use the demos or the benchmark circuits you should install PyZX from source by cloning the git repository.
 
@@ -60,10 +64,19 @@ PyZX can also be run from the commandline. To optimise a circuit you can for ins
 
 If you wish to cite PyZX in an academic work, please cite the [accompanying paper](https://arxiv.org/abs/1904.04735):
 <pre>
-  @article{kissinger2019pyzx,
-    title={Pyzx: Large scale automated diagrammatic reasoning},
-    author={Kissinger, Aleks and van de Wetering, John},
-    journal={arXiv preprint arXiv:1904.04735},
-    year={2019}
-  }
+  @inproceedings{kissinger2020Pyzx,
+    author = {Kissinger, Aleks and van de Wetering, John},
+    title = {{PyZX: Large Scale Automated Diagrammatic Reasoning}},
+    year = {2020},
+    booktitle = {{\rm Proceedings 16th International Conference on} Quantum Physics and Logic, {\rm Chapman University, Orange, CA, USA., 10-14 June 2019}},
+    editor = {Coecke, Bob and Leifer, Matthew},
+    series = {Electronic Proceedings in Theoretical Computer Science},
+    volume = {318},
+    pages = {229-241},
+    publisher = {Open Publishing Association},
+    doi = {10.4204/EPTCS.318.14}
+}
 </pre>
+
+Here's a plane that says PYZX:
+![PYZX](https://github.com/Quantomatic/pyzx/raw/master/images/F-PYZX.jpg)

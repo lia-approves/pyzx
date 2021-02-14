@@ -1,32 +1,43 @@
 # PyZX - Python library for quantum circuit rewriting 
-#        and optimisation using the ZX-calculus
+#        and optimization using the ZX-calculus
 # Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#    http://www.apache.org/licenses/LICENSE-2.0
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-__all__ = ['cnots','cliffords', 'cliffordT', 'identity']
+__all__ = ['cnots','cliffords', 'cliffordT', 'identity', 'CNOT_HAD_PHASE_circuit']
 
 import random
 from fractions import Fraction
 
-from .graph import Graph, EdgeType, VertexType
+from typing import Optional, List, Union
+from typing_extensions import Literal
+
+from .utils import EdgeType, VertexType, FloatInt, FractionLike
+from .graph import Graph
+from .graph.base import BaseGraph
 from .circuit import Circuit
 
+# TODO: This file needs some cleanup, as probably all functions should just return a Circuit instead of a Graph
 
-def identity(qubits, depth=1,backend=None):
-    """Generates an identity circuit on a given amount of qubits.
-    ``depth`` specifies at which row the outputs should be placed."""
+
+def identity(qubits: int, depth: FloatInt=1,backend:Optional[str]=None) -> BaseGraph:
+    """Generates a :func:`pyzx.graph.Graph` representing an identity circuit.
+
+    Args:
+        qubits: number of qubits (i.e. parallel lines of the Graph)
+        depth: at which row the output vertices should be placed
+        backend: the backend to use for the output graph
+    """
     g = Graph(backend)
     for i in range(qubits):
         v = g.add_vertex(VertexType.BOUNDARY,i,0)
@@ -37,14 +48,60 @@ def identity(qubits, depth=1,backend=None):
 
     return g
 
+def spider(
+    typ:Union[Literal["Z"],Literal["X"],Literal["H"],VertexType.Type],
+    inputs: int,
+    outputs: int,
+    phase:FractionLike=0
+    ) -> BaseGraph:
+    """Returns a Graph containing a single spider of the specified type 
+    and with the specified number of inputs and outputs."""
+    if typ == "Z": typ = VertexType.Z
+    elif typ == "X": typ = VertexType.X
+    elif typ == "H": typ = VertexType.H_BOX
+    else:
+        if not isinstance(typ,int):
+            raise TypeError("Wrong type for spider type: " + str(typ))
+    g = Graph()
+    for i in range(inputs):
+        v = g.add_vertex(VertexType.BOUNDARY,i,0)
+        g.inputs.append(v)
+    for i in range(outputs):
+        v = g.add_vertex(VertexType.BOUNDARY,i,2)
+        g.outputs.append(v)
+    v = g.add_vertex(typ,(inputs-1)/2,1,phase)
+    for w in g.inputs:
+        g.add_edge(g.edge(v,w))
+    for w in g.outputs:
+        g.add_edge(g.edge(v,w))
+    return g
 
-def CNOT_HAD_PHASE_circuit(qubits, gates, p_had, p_t, clifford=False):
-    """Returns a Circuit consisting of CNOT, HAD and phase gates. 
-    The default phase gate is the T gate, but if ``clifford=True``, then
-    this is replaced by the S gate."""
+
+def CNOT_HAD_PHASE_circuit(
+        qubits: int, 
+        depth: int, 
+        p_had: float = 0.2, 
+        p_t: float = 0.2, 
+        clifford:bool=False
+        ) -> Circuit:
+    """Construct a Circuit consisting of CNOT, HAD and phase gates. 
+    The default phase gate is the T gate, but if ``clifford=True``\ , then
+    this is replaced by the S gate.
+
+    Args:
+        qubits: number of qubits of the circuit
+        depth: number of gates in the circuit
+        p_had: probability that each gate is a Hadamard gate
+        p_t: probability that each gate is a T gate (or if ``clifford`` is set, S gate)
+        clifford: when set to True, the phase gates are S gates instead of T gates.
+
+    Returns:
+        A random circuit consisting of Hadamards, CNOT gates and phase gates.
+
+    """
     p_cnot = 1-p_had-p_t
     c = Circuit(qubits)
-    for _ in range(gates):
+    for _ in range(depth):
         r = random.random()
         if r > 1-p_had:
             c.add_gate("HAD",random.randrange(qubits))
@@ -60,23 +117,26 @@ def CNOT_HAD_PHASE_circuit(qubits, gates, p_had, p_t, clifford=False):
     return c
 
 
-def cnots(qubits, depth, backend=None):
+def cnots(qubits: int, depth: int, backend:Optional[str]=None) -> BaseGraph:
     """Generates a circuit consisting of randomly placed CNOT gates.
-
-    :param qubits: Amount of qubits in circuit
-    :param depth: Depth of circuit
-    :param backend: When given, should be one of the possible :ref:`graph_api` backends.
-    :rtype: Instance of graph of the given backend
+    
+    Args:
+    qubits: Amount of qubits in circuit
+    depth: Depth of circuit
+    backend: When given, should be one of the possible :ref:`graph_api` backends.
+    
+    Returns:
+        Instance of graph of the given backend
     """
     # initialise and add input row
 
-    q = list(range(qubits))   # qubit index, initialised with input
-    r = 1                     # current rank
-    ty = [VertexType.BOUNDARY] * qubits         # types of vertices
-    qs = list(range(qubits))  # tracks qubit indices of vertices
-    rs = [0] * qubits         # tracks rank of vertices
-    v = qubits                # next vertex to add
-    es = [] # edges to add
+    q: List[int] = list(range(qubits))                          # qubit index, initialised with input
+    r: int = 1                                                  # current rank
+    ty: List[VertexType.Type] = [VertexType.BOUNDARY] * qubits  # types of vertices
+    qs: List[int] = list(range(qubits))                         # tracks qubit indices of vertices
+    rs: List[int] = [0] * qubits                                # tracks rank of vertices
+    v = qubits                                                  # next vertex to add
+    es = []                                                     # edges to add
 
     # initial row of Z
     for i in range(qubits):
@@ -133,15 +193,23 @@ def cnots(qubits, depth, backend=None):
     g.scalar.add_power(depth)
     return g
 
-def accept(p):
+def accept(p: float) -> bool:
     return p>random.random()
 
-def random_phase(add_t):
+def random_phase(add_t: bool) -> Fraction:
     if add_t:
         return Fraction(random.randint(1,8),4)
     return Fraction(random.randint(1,4),2)
 
-def cliffordT(qubits, depth, p_t=None, p_s=None, p_hsh=None, p_cnot=None, backend=None):
+def cliffordT(
+        qubits: int, 
+        depth: int, 
+        p_t:Optional[float]=None, 
+        p_s:Optional[float]=None, 
+        p_hsh:Optional[float]=None, 
+        p_cnot:Optional[float]=None, 
+        backend:Optional[str]=None
+        ) -> BaseGraph:
     """Generates a circuit consisting of randomly placed Clifford+T gates. Optionally, take
     probabilities of adding T, S, HSH, and CNOT. If probabilities for only a subset of gates
     is given, any remaining probability will be uniformly distributed among the remaining
@@ -163,21 +231,21 @@ def cliffordT(qubits, depth, p_t=None, p_s=None, p_hsh=None, p_cnot=None, backen
 
     num = 0.0
     rest = 1.0
-    if p_t == None: num += 1.0
+    if p_t is None: num += 1.0
     else: rest -= p_t
-    if p_s == None: num += 1.0
+    if p_s is None: num += 1.0
     else: rest -= p_s
-    if p_hsh == None: num += 1.0
+    if p_hsh is None: num += 1.0
     else: rest -= p_hsh
-    if p_cnot == None: num += 1.0
+    if p_cnot is None: num += 1.0
     else: rest -= p_cnot
 
     if rest < 0: raise ValueError("Probabilities are >1.")
 
-    if p_t == None: p_t = rest / num
-    if p_s == None: p_s = rest / num
-    if p_hsh == None: p_hsh = rest / num
-    if p_cnot == None: p_cnot = rest / num
+    if p_t is None: p_t = rest / num
+    if p_s is None: p_s = rest / num
+    if p_hsh is None: p_hsh = rest / num
+    if p_cnot is None: p_cnot = rest / num
 
     #p_s = (1 - p_t) / 3.0
     #p_hsh = (1 - p_t) / 3.0
@@ -246,7 +314,12 @@ def cliffordT(qubits, depth, p_t=None, p_s=None, p_hsh=None, p_cnot=None, backen
 
 
 
-def cliffords(qubits, depth, no_hadamard=False,t_gates=False,backend=None):
+def cliffords(
+        qubits: int, 
+        depth: int, 
+        no_hadamard:bool=False,
+        t_gates:bool=False,
+        backend:Optional[str]=None):
     """Generates a circuit consisting of randomly placed Clifford gates.
     Uses a different approach to generating Clifford circuits then :func:`cliffordT`.
 
@@ -267,7 +340,7 @@ def cliffords(qubits, depth, no_hadamard=False,t_gates=False,backend=None):
 
     q = list(range(qubits))   # qubit index, initialised with input
     r = 1                     # current rank
-    ty = [VertexType.BOUNDARY] * qubits         # types of vertices
+    ty: List[VertexType.Type] = [VertexType.BOUNDARY] * qubits         # types of vertices
     qs = list(range(qubits))  # tracks qubit indices of vertices
     rs = [0] * qubits         # tracks rank of vertices
     v = qubits                # next vertex to add
@@ -296,7 +369,7 @@ def cliffords(qubits, depth, no_hadamard=False,t_gates=False,backend=None):
                 ty += [VertexType.Z, VertexType.X]
             else: 
                 es2.append((v,v+1))
-                typ = random.choice((VertexType.Z, VertexType.X))
+                typ: VertexType.Type = random.choice([VertexType.Z, VertexType.X])
                 ty += [typ, typ]
             if accept(p_phase): phases[v] = random_phase(t_gates)
             if accept(p_phase): phases[v+1] = random_phase(t_gates)
@@ -348,12 +421,13 @@ def cliffords(qubits, depth, no_hadamard=False,t_gates=False,backend=None):
 
     for i in range(qubits):
         g.inputs.append(i)
-        g.outputs.append(v-i-1)
+        #g.outputs.append(v-i-1)
+        g.outputs.append(v-qubits+i)
     return g
 
 
 
-def circuit_identity_phasepoly():
+def circuit_identity_phasepoly() -> Circuit:
     """Returns a 4-qubit circuit that is equal to the identity, provable by phase polynomial reductions."""
     c = Circuit(4)
     c.add_gate("ParityPhase",Fraction(1,4),0,1,2,3)
@@ -364,10 +438,10 @@ def circuit_identity_phasepoly():
             for k in range(j+1,4):
                 c.add_gate("ParityPhase", Fraction(7,4),i,j,k)
 
-    return c.to_graph()
+    return c
 
 
-def circuit_identity_commuting_controls(alpha,beta):
+def circuit_identity_commuting_controls(alpha:Fraction,beta:Fraction) -> Circuit:
     """Returns the circuit UVU*V* where U=NCZ(2beta) and V=CX(2alpha).
     Since these operations commute this circuit is equal to the identity.
     See page 13 of https://arxiv.org/pdf/1705.11151.pdf for more details."""
@@ -392,10 +466,10 @@ def circuit_identity_commuting_controls(alpha,beta):
     c.add_circuit(cb.adjoint())
     c.add_circuit(ca.adjoint())
     
-    return c.to_graph()
+    return c
 
 
-def circuit_identity_two_qubit1():
+def circuit_identity_two_qubit1() -> Circuit:
     """This returns the first nontrivial circuit identity from Selinger & Bian.
     See https://www.mathstat.dal.ca/~xbian/talks/slide_cliffordt2.pdf"""
     c = Circuit(2)
@@ -412,9 +486,9 @@ def circuit_identity_two_qubit1():
     c.add_gate("T",1)
     c.add_gate("CNOT",0,1)
     c.add_circuit(c)
-    return c.to_graph()
+    return c
 
-def circuit_identity_two_qubit2():
+def circuit_identity_two_qubit2() -> Circuit:
     """This returns the second nontrivial circuit identity from Selinger & Bian.
     See https://www.mathstat.dal.ca/~xbian/talks/slide_cliffordt2.pdf"""
     c = Circuit(2)
@@ -433,4 +507,4 @@ def circuit_identity_two_qubit2():
     c.add_gate("HAD",1)
     c.add_gate("T",1,adjoint=True)
     c.add_circuit(c)
-    return c.to_graph()
+    return c

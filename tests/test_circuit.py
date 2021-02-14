@@ -1,19 +1,19 @@
 # PyZX - Python library for quantum circuit rewriting 
-#        and optimisation using the ZX-calculus
+#        and optimization using the ZX-calculus
 # Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#    http://www.apache.org/licenses/LICENSE-2.0
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 
 import unittest
 import random
@@ -30,7 +30,7 @@ except ImportError:
 
 from pyzx.generate import cliffordT, cliffords
 from pyzx.simplify import clifford_simp
-from pyzx.extract import streaming_extract
+from pyzx.extract import extract_circuit
 from pyzx.circuit import Circuit
 
 SEED = 1337
@@ -92,7 +92,7 @@ class TestCircuit(unittest.TestCase):
         g = cliffordT(5, 70, 0.15)
         t = g.to_tensor(False)
         clifford_simp(g, quiet=True)
-        c = streaming_extract(g)
+        c = extract_circuit(g)
         t2 = c.to_tensor(False)
         self.assertTrue(compare_tensors(t,t2,False))
 
@@ -105,6 +105,13 @@ class TestCircuit(unittest.TestCase):
         c.add_gate("CZ",0,1)
         cz_matrix = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,-1]])
         self.assertTrue(compare_tensors(c.to_matrix(),cz_matrix))
+
+    def test_verify_equality_permutation_option(self):
+        c1 = Circuit(2)
+        c2 = Circuit(2)
+        c2.add_gate("SWAP",0,1)
+        self.assertTrue(c1.verify_equality(c2,up_to_swaps=True))
+        self.assertFalse(c1.verify_equality(c2,up_to_swaps=False))
 
 if __name__ == '__main__':
     unittest.main()

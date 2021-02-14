@@ -1,32 +1,32 @@
 # PyZX - Python library for quantum circuit rewriting 
-#        and optimisation using the ZX-calculus
+#        and optimization using the ZX-calculus
 # Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#    http://www.apache.org/licenses/LICENSE-2.0
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import os
 from typing import List, Union, Optional, Iterator
 
 import numpy as np
 
-from .gates import Gate, gate_types, ZPhase, XPhase, CZ,CX,CNOT, HAD
+from .gates import Gate, gate_types, ZPhase, XPhase, CZ, CX, CNOT, HAD
 
-from ..graph.base import BaseGraph, ET, VT
+from ..graph.base import BaseGraph
 
 CircuitLike = Union['Circuit', Gate]
 
-#Note that many of the method of Circuit contain inline imports. These are there to prevent circular imports.
+# Note that many of the method of Circuit contain inline imports. These are
+# there to prevent circular imports.
 
 __all__ = ['Circuit', 'id']
 
@@ -39,7 +39,7 @@ class Circuit(object):
     The methods in this class that convert a specification of a circuit into an instance of this class,
     generally do not check whether the specification is well-defined. If a bad input is given, 
     the behaviour is undefined."""
-    def __init__(self, qubit_amount: int, name:str='') -> None:
+    def __init__(self, qubit_amount: int, name: str = '') -> None:
         self.qubits: int        = qubit_amount
         self.gates:  List[Gate] = []
         self.name:   str        = name
@@ -66,21 +66,31 @@ class Circuit(object):
         return c
 
 
-    def verify_equality(self, other: 'Circuit') -> bool:
+    def verify_equality(self, other: 'Circuit', up_to_swaps: bool = False) -> bool:
         """Composes the other circuit with the adjoint of this circuit, and tries to reduce
         it to the identity using :func:`simplify.full_reduce``. If successful returns True,
         if not returns None. 
 
-        Note that while a successful reduction to the identity is strong evidence that the two
-        circuits are equal, if this function is not able to reduce the graph to the identity
-        this does not prove anything. """
+        Note:
+            A successful reduction to the identity is strong evidence that the two
+            circuits are equal, if this function is not able to reduce the graph to the identity
+            this does not prove anything. 
+
+        Args:
+            other: the circuit to compare equality to.
+            up_to_swaps: if set to True, only checks equality up to a permutation of the qubits.
+
+        """
         from ..simplify import full_reduce
         c = self.adjoint()
         c.add_circuit(other)
         g = c.to_graph()
         full_reduce(g)
         if g.num_vertices() == self.qubits*2:
-            return True
+            if up_to_swaps:
+                return True
+            else:
+                return all(g.connected(v,w) for v,w in zip(g.inputs,g.outputs))
         else:
             return False
 
@@ -98,6 +108,14 @@ class Circuit(object):
             gate_class = gate_types[gate]
             gate = gate_class(*args, **kwargs) # type: ignore
         self.gates.append(gate)
+
+    def prepend_gate(self, gate, *args, **kwargs):
+        """The same as add_gate, but adds the gate to the start of the circuit, not the end.
+        """
+        if isinstance(gate, str):
+            gate_class = gates.gate_types[gate]
+            gate = gate_class(*args, **kwargs)
+        self.gates.insert(0, gate)
 
     def add_gates(self, gates: str, qubit: int) -> None:
         """Adds a series of single qubit gates on the same qubit.
@@ -201,6 +219,14 @@ class Circuit(object):
         return self.tensor(other)
 
 
+    ### MATRIX EMULATION (FOR E.G. Mat2.guass)
+
+    def row_add(self, q0: int, q1: int):
+        self.add_gate("CNOT", q0, q1)
+
+    def col_add(self, q0: int, q1: int):
+        self.prepend_gate("CNOT", q1, q0)
+
 
     ### CONVERSION METHODS
 
@@ -232,10 +258,10 @@ class Circuit(object):
         return self.to_graph().to_matrix(preserve_scalar)
 
     def to_emoji(self) -> str:
-    	"""Converts circuit into a representation that can be copy-pasted
+        """Converts circuit into a representation that can be copy-pasted
     	into the ZX-calculus Discord server."""
-    	from .emojiparser import circuit_to_emoji
-    	return circuit_to_emoji(self)
+        from .emojiparser import circuit_to_emoji
+        return circuit_to_emoji(self)
 
     @staticmethod
     def load(circuitfile: str) -> 'Circuit':
@@ -253,10 +279,7 @@ class Circuit(object):
         if ext == 'qgraph':
             raise TypeError(".qgraph files are not Circuits. Please load them as graphs using json_to_graph")
         if ext == 'quipper':
-            try:
-                return Circuit.from_quipper_file(circuitfile)
-            except:
-                return quipper_center_block(circuitfile)
+            return Circuit.from_quipper_file(circuitfile)
         raise TypeError("Couldn't determine filetype")
 
     @staticmethod
@@ -267,7 +290,7 @@ class Circuit(object):
     @staticmethod
     def from_qc_file(fname: str) -> 'Circuit':
         """Produces a :class:`Circuit` based on a .qc description of a circuit.
-        If a Tofolli gate with more than 2 controls is encountered, ancilla qubits are added.
+        If a Toffoli gate with more than 2 controls is encountered, ancilla qubits are added.
         Currently up to 5 controls are supported."""
         from .qcparser import parse_qc
         with open(fname, 'r') as f:
@@ -279,7 +302,7 @@ class Circuit(object):
     @staticmethod
     def from_qsim_file(fname: str) -> 'Circuit':
         """Produces a :class:`Circuit` based on a .qc description of a circuit.
-        If a Tofolli gate with more than 2 controls is encountered, ancilla qubits are added.
+        If a Toffoli gate with more than 2 controls is encountered, ancilla qubits are added.
         Currently up to 5 controls are supported."""
         from .qsimparser import parse_qsim
         with open(fname, 'r') as f:
@@ -303,11 +326,19 @@ class Circuit(object):
     @staticmethod
     def from_quipper_file(fname: str) -> 'Circuit':
         """Produces a :class:`Circuit` based on a Quipper ASCII description of a circuit."""
-        with open(fname, 'r') as f:
-            text = f.read().strip()
-        c = Circuit.from_quipper(text)
-        c.name = os.path.basename(fname)
-        return c
+        from .quipperparser import parse_quipper_block, quipper_center_block
+        try:
+            with open(fname, 'r') as f:
+                text = f.read().strip()
+                lines = text.splitlines()
+            if text.find('Subroutine') == -1:
+                c = parse_quipper_block(lines)
+                c.name = os.path.basename(fname)
+                return c
+            else:
+                raise TypeError("Subroutines are not supported")
+        except:
+            return quipper_center_block(fname)
 
     @staticmethod
     def from_qasm(s: str) -> 'Circuit':
@@ -380,6 +411,7 @@ class Circuit(object):
         hadamard = 0
         clifford = 0
         other = 0
+        cnot = 0
         for g in self.gates:
             total += 1
             tcount += g.tcount()
@@ -391,13 +423,15 @@ class Circuit(object):
             elif isinstance(g, (CZ,CX, CNOT)):
                 twoqubit += 1
                 clifford += 1
+                if isinstance(g, CNOT): cnot += 1
             else:
                 other += 1
         s = """Circuit {} on {} qubits with {} gates.
         {} is the T-count
         {} Cliffords among which 
-        {} 2-qubit gates and {} Hadamard gates.""".format(self.name, self.qubits, total, 
-                tcount, clifford, twoqubit, hadamard)
+        {} 2-qubit gates ({} CNOT, {} other) and
+        {} Hadamard gates.""".format(self.name, self.qubits, total, 
+                tcount, clifford, twoqubit, cnot, twoqubit - cnot, hadamard)
         if other > 0:
             s += "\nThere are {} gates of a different type".format(other)
         return s

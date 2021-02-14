@@ -1,19 +1,18 @@
 # PyZX - Python library for quantum circuit rewriting 
-#		and optimisation using the ZX-calculus
+#        and optimization using the ZX-calculus
 # Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#    http://www.apache.org/licenses/LICENSE-2.0
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 
 import json
@@ -21,15 +20,23 @@ import os
 from fractions import Fraction
 import traceback
 
-from .utils import EdgeType, VertexType, toggle_edge, vertex_is_zx, toggle_vertex
+from typing import Callable, Optional, List, Tuple, Set, Dict, Any, Union
 
-try:
-	import ipywidgets as widgets # type: ignore
-	from traitlets import Unicode, validate, Bool, Int, Float # type: ignore
-	from IPython.display import display, HTML # type: ignore
-	in_notebook = True
-except ImportError:
-	in_notebook = False
+from .utils import EdgeType, VertexType, toggle_edge, vertex_is_zx, toggle_vertex
+from .utils import settings, phase_to_s, FloatInt
+from .drawing import matrix_to_latex
+from .graph import Scalar
+from .graph.graph import GraphS
+from . import rules
+from . import tikz
+
+from .editor_actions import MATCHES_VERTICES, MATCHES_EDGES, operations, operations_to_js
+
+if settings.mode == 'notebook':
+	import ipywidgets as widgets
+	from traitlets import Unicode, validate, Bool, Int, Float
+	from IPython.display import display, HTML
+else:
 	# Make some dummy classes to prevent errors with the definition
 	# of ZXEditorWidget
 	class DOMWidget(object):
@@ -45,10 +52,6 @@ except ImportError:
 		register = lambda x: x
 		DOMWidget = DOMWidget
 
-from .drawing import phase_to_s
-
-from . import rules
-
 __all__ = ['edit', 'help']
 
 HELP_STRING = """To create an editor, call `e = zx.editor.edit(g)` on a graph g. 
@@ -60,7 +63,7 @@ Click on edges or vertices to select them.
 Drag a box or hold shift to select multiple vertices or edges.
 Press delete or backspace to delete the current selection.
 Double-click a vertex to choose its phase.
-Ctrl-click on empty space to add a new vertex. 
+Ctrl-click (Command-click for mac users) on empty space to add a new vertex. 
 The type of the vertex is determined by the box "Vertex type".
 Click this box (or press the hotkey 'x') to change the adding type. 
 Ctrl-drag between two vertices to add an edge between them. 
@@ -92,27 +95,12 @@ If you are running this in a Jupyter notebook, then you probably don't have ipyw
 Run %%pip install ipywidgets in a cell in your notebook to install the correct package.
 """
 
-# We default to importing d3 from a CDN
-d3_load_string = 'require.config({paths: {d3: "https://d3js.org/d3.v5.min"} });'
-# However, if we are working in the pyzx directory itself, we can use the copy of d3
-# local to pyzx, which doesn't require an internet connection
-# We only do this if we believe we are running in the PyZX directory itself.
-
-javascript_location = os.path.join(os.path.dirname(__file__), 'js')
-relpath = os.path.relpath(javascript_location, os.getcwd())
-if relpath.count('..') <= 1: # We are *probably* working in the PyZX directory
-	javascript_location = os.path.relpath(javascript_location, os.getcwd())
-	d3_load_string = 'require.config({{baseUrl: "{}",paths: {{d3: "d3.v5.min"}} }});'.format(
-						javascript_location.replace('\\','/'))
-	# TODO: This will fail if Jupyter is started in the parent directory of pyzx, while
-	# the notebook is not in the pyzx directory
-
-def load_js():
-	if not in_notebook:
+def load_js() -> None:
+	if settings.mode != 'notebook':
 		raise Exception(ERROR_STRING)
-	with open(os.path.join(javascript_location,"zx_editor_widget.js")) as f:
+	with open(os.path.join(settings.javascript_location,"zx_editor_widget.js")) as f:
 		data1 = f.read()
-	with open(os.path.join(javascript_location,"zx_editor_model.js")) as f:
+	with open(os.path.join(settings.javascript_location,"zx_editor_model.js")) as f:
 		data2 = f.read()
 	#"""<div style="overflow:auto">Loading scripts</div>
 	text = """<script type="text/javascript">{0}
@@ -120,22 +108,10 @@ def load_js():
 			</script>
 			<script type="text/javascript">
 				{2}
-			</script>""".format(d3_load_string,data1,data2)
+			</script>""".format(settings.d3_load_string,data1,data2)
 	display(HTML(text))
 
-_d3_editor_id = 0
-
-# def phase_to_s(a):
-#	 if not a: return ''
-#	 if not isinstance(a, Fraction):
-#		 a = Fraction(a)
-#	 ns = '' if a.numerator == 1 else str(a.numerator)
-#	 ds = '' if a.denominator == 1 else '/' + str(a.denominator)
-
-#	 # unicode 0x03c0 = pi
-#	 return ns + '\u03c0' + ds
-
-def s_to_phase(s, t=1):
+def s_to_phase(s: str, t:VertexType.Type=VertexType.Z) -> Fraction:
 	if not s: 
 		if t!= VertexType.H_BOX: return Fraction(0)
 		else: return Fraction(1)
@@ -143,127 +119,23 @@ def s_to_phase(s, t=1):
 	if s.find('/') != -1:
 		a,b = s.split("/", 2)
 		if not a: return Fraction(1,int(b))
+		if a == '-': a = '-1'
 		return Fraction(int(a),int(b))
 	if not s: return Fraction(1)
 	return Fraction(int(s))
 
-def graph_to_json(g, scale):
-	nodes = [{'name': int(v),
+def graph_to_json(g: GraphS, scale:FloatInt) -> str:
+	nodes = [{'name': int(v), # type: ignore
 			  'x': (g.row(v) + 1) * scale,
 			  'y': (g.qubit(v) + 2) * scale,
 			  't': g.type(v),
 			  'phase': phase_to_s(g.phase(v),g.type(v)) }
 			 for v in g.vertices()]
-	links = [{'source': int(g.edge_s(e)),
-			  'target': int(g.edge_t(e)),
+	links = [{'source': int(g.edge_s(e)), # type: ignore
+			  'target': int(g.edge_t(e)), # type: ignore
 			  't': g.edge_type(e) } for e in g.edges()]
-	return json.dumps({'nodes': nodes, 'links': links})
-
-
-
-def colour_change_matcher(g, vertexf):
-	if vertexf != None: candidates = set([v for v in g.vertices() if vertexf(v)])
-	else: candidates = g.vertex_set()
-	types = g.types()
-
-	m = []
-	while len(candidates) > 0:
-		v = candidates.pop()
-		if types[v] == VertexType.X:
-			m.append(v)
-
-	return m
-
-def colour_change(g, matches):
-	for v in matches:
-		g.set_type(v, VertexType.Z)
-		for e in g.incident_edges(v):
-			et = g.edge_type(e)
-			g.set_edge_type(e, toggle_edge(et))
-	return ({}, [],[],False)
-
-def copy_matcher(g, vertexf=None):
-	if vertexf != None: candidates = set([v for v in g.vertices() if vertexf(v)])
-	else: candidates = g.vertex_set()
-	phases = g.phases()
-	types = g.types()
-	m = []
-
-	while len(candidates) > 0:
-		v = candidates.pop()
-		if phases[v] not in (0,1) or not vertex_is_zx(types[v]) or g.vertex_degree(v) != 1:
-                    continue
-		w = list(g.neighbours(v))[0]
-		e = g.edge(v,w)
-		et = g.edge_type(e)
-		if ((types[w] != types[v] and et==EdgeType.HADAMARD) or
-			(types[w] == types[v] and et==EdgeType.SIMPLE)):
-			continue
-		neigh = [n for n in g.neighbours(w) if n != v]
-		m.append((v,w,et,phases[v],phases[w],neigh))
-		candidates.discard(w)
-		candidates.difference_update(neigh)
-
-	return m
-
-def apply_copy(g, matches):
-	rem = []
-	types = g.types()
-	for v,w,t,a,alpha, neigh in matches:
-		rem.append(v)
-		rem.append(w)
-		g.scalar.add_power(1)
-		
-		if a: g.scalar.add_phase(alpha)
-		for n in neigh: 
-			r = g.row(n)
-			vt = types[v] if t == EdgeType.SIMPLE else toggle_vertex(types[v])
-			u = g.add_vertex(vt, g.qubit(n)-0.8, r, a)
-			e = g.edge(n,w)
-			et = g.edge_type(e)
-			g.add_edge((n,u), et)
-	return ({}, rem, [], True)
-
-MATCHES_VERTICES = 1
-MATCHES_EDGES = 2
-
-operations = {
-	"spider": {"text": "fuse spiders", 
-			   "tooltip": "Fuses connected spiders of the same colour",
-			   "matcher": rules.match_spider_parallel, 
-			   "rule": rules.spider, 
-			   "type": MATCHES_EDGES},
-	"colour": {"text": "change colour", 
-			   "tooltip": "Changes X spiders into Z spiders by pushing out Hadamards",
-			   "matcher": colour_change_matcher, 
-			   "rule": colour_change, 
-			   "type": MATCHES_VERTICES},
-	"rem_id": {"text": "remove identity", 
-			   "tooltip": "Removes a 2-ary phaseless spider",
-			   "matcher": rules.match_ids_parallel, 
-			   "rule": rules.remove_ids, 
-			   "type": MATCHES_VERTICES},
-	"copy": {"text": "copy 0/pi spider", 
-			   "tooltip": "Copies a single-legged spider with a 0/pi phase through its neighbour",
-			   "matcher": copy_matcher, 
-			   "rule": apply_copy, 
-			   "type": MATCHES_VERTICES},
-	"lcomp": {"text": "local complementation", 
-			   "tooltip": "Deletes a spider with a pi/2 phase by performing a local complementation on its neighbours",
-			   "matcher": rules.match_lcomp_parallel, 
-			   "rule": rules.lcomp, 
-			   "type": MATCHES_VERTICES},
-	"pivot": {"text": "pivot", 
-			   "tooltip": "Deletes a pair of spiders with 0/pi phases by performing a pivot",
-			   "matcher": lambda g, matchf: rules.match_pivot_parallel(g, matchf, check_edge_types=True), 
-			   "rule": rules.pivot, 
-			   "type": MATCHES_EDGES}
-}
-
-
-def operations_to_js():
-	global operations
-	return json.dumps({k:{"active":False, "text":v["text"], "tooltip":v["tooltip"]} for k,v in operations.items()})
+	scalar = g.scalar.to_json()
+	return json.dumps({'nodes': nodes, 'links': links, 'scalar': scalar})
 
 
 @widgets.register
@@ -287,23 +159,55 @@ class ZXEditorWidget(widgets.DOMWidget):
 	last_operation = Unicode('').tag(sync=True)
 	action 		   = Unicode('').tag(sync=True)
 	
-	def __init__(self, graph, *args, **kwargs):
+	def __init__(
+			self, 
+			graph: GraphS, 
+			show_matrix:bool=False, 
+			show_scalar:bool=False,
+			*args, **kwargs
+			) -> None:
 		super().__init__(*args,**kwargs)
 		self.observe(self._handle_graph_change, 'graph_json')
 		self.observe(self._selection_changed, 'graph_selected')
 		self.observe(self._apply_operation, 'button_clicked')
 		self.observe(self._perform_action, 'action')
 		self.graph = graph
-		self.undo_stack = [('initial',str(self.graph_json))]
-		self.undo_position = 1
-		self.halt_callbacks = False
-		self.msg = []
+		self.show_matrix = show_matrix
+		self.show_scalar = show_scalar
+		self.undo_stack: List[Tuple[str,str]] = [('initial',str(self.graph_json))]
+		self.undo_position: int = 1
+		self.halt_callbacks: bool = False
+		self.snapshots: List[GraphS] = []
+		self.msg: List[str] = []
 		self.output = widgets.Output()
+		self.scalar_view = widgets.Label()
+		self.matrix_view = widgets.Label()
+		self._update_matrix()
 	
-	def update(self):
-		self.graph_json = graph_to_json(self.graph, self.graph.scale)
+	def update(self) -> None:
+		self.graph_json = graph_to_json(self.graph, self.graph.scale) # type: ignore
 
-	def _parse_selection(self):
+	def _update_matrix(self):
+		if self.show_scalar:
+			s = self.graph.scalar.to_latex()
+			if s == '': s = '1'
+			self.scalar_view.value = "Scalar: " + s
+		if not self.show_matrix: return
+		try:
+			self.graph.auto_detect_inputs()
+		except TypeError:
+			self.matrix_view.value = "Couldn't parse inputs or outputs"
+			return
+		if len(self.graph.inputs) > 4 or len(self.graph.outputs) > 4:
+			self.matrix_view.value = "Matrix too large to show"
+			return
+		try:
+			m = self.graph.to_matrix()
+		except ValueError:
+			return
+		self.matrix_view.value = matrix_to_latex(m)
+
+	def _parse_selection(self) -> Tuple[Set[int],Set[Tuple[int,int]]]:
 		"""Helper function for `_selection_changed` and `_apply_operation`."""
 		selection = json.loads(self.graph_selected)
 		g = self.graph
@@ -342,9 +246,10 @@ class ZXEditorWidget(widgets.DOMWidget):
 			else: matches = data["matcher"](g, lambda v: v in vertex_set)
 			# Apply the rule
 			etab, rem_verts, rem_edges, check_isolated_vertices = data["rule"](g, matches)
-			g.add_edge_table(etab)
-			g.remove_vertices(rem_verts)
 			g.remove_edges(rem_edges)
+			g.remove_vertices(rem_verts)
+			g.add_edge_table(etab)
+			
 			#if check_isolated_vertices: g.remove_isolated_vertices()
 			# Remove stuff from the selection
 			selection = json.loads(self.graph_selected)
@@ -356,6 +261,7 @@ class ZXEditorWidget(widgets.DOMWidget):
 			self.graph_selected = json.dumps(selection)
 			self.button_clicked = ''
 			self.update()
+			self._selection_changed(None)
 		except Exception as e:
 			with self.output: print(traceback.format_exc())
 
@@ -365,19 +271,21 @@ class ZXEditorWidget(widgets.DOMWidget):
 			if action == '': return
 			elif action == 'undo': self.undo()
 			elif action == 'redo': self.redo()
+			elif action == 'snapshot': self.make_snapshot()
+			elif action == 'tikzit': self.open_tikzit()
 			else: raise ValueError("Unknown action '{}'".format(action))
 			self.action = ''
 		except Exception as e:
 			with self.output: print(traceback.format_exc())
 
 
-	def undo_stack_add(self, description, js):
+	def _undo_stack_add(self, description: str, js: str) -> None:
 		self.undo_stack = self.undo_stack[:len(self.undo_stack)-self.undo_position+1]
 		self.undo_position = 1
 		self.undo_stack.append((description,js))
 		self.msg.append("Adding to undo stack: " + description)
 
-	def undo(self):
+	def undo(self) -> None:
 		if self.undo_position == len(self.undo_stack): return
 		self.undo_position += 1
 		description, js = self.undo_stack[len(self.undo_stack)-self.undo_position]
@@ -388,7 +296,7 @@ class ZXEditorWidget(widgets.DOMWidget):
 		self.update()
 		self.halt_callbacks = False
 
-	def redo(self):
+	def redo(self) -> None:
 		if self.undo_position == 1: return
 		self.undo_position -= 1
 		description, js = self.undo_stack[len(self.undo_stack)-self.undo_position]
@@ -399,23 +307,34 @@ class ZXEditorWidget(widgets.DOMWidget):
 		self.update()
 		self.halt_callbacks = False
 
-	def graph_from_json(self, js):
+	def make_snapshot(self) -> None:
+		self.snapshots.append(self.graph.copy()) # type: ignore
+
+	def open_tikzit(self) -> None:
+		seq = self.snapshots + [self.graph]
+		tz = tikz.to_tikz_sequence(seq) # type: ignore
 		try:
-			scale = self.graph.scale
-			marked = self.graph.vertex_set()
+			tikz.tikzit(tz)
+		except Exception as e:
+			with self.output: print(e)
+
+	def graph_from_json(self, js: Dict[str,Any]) -> None:
+		try:
+			scale = self.graph.scale # type: ignore
+			marked: Union[Set[int],Set[Tuple[int,int]]] = self.graph.vertex_set()
 			for n in js["nodes"]:
 				v = n["name"]
 				r = float(n["x"])/scale -1
 				q = float(n["y"])/scale -2
 				t = int(n["t"])
-				phase = s_to_phase(n["phase"], t)
+				phase = s_to_phase(n["phase"], t) # type: ignore
 				if v not in marked:
-					self.graph.add_vertex_indexed(v)
+					self.graph.add_vertex_indexed(v) # type: ignore
 				else: 
 					marked.remove(v)
 				self.graph.set_position(v, q, r)
 				self.graph.set_phase(v, phase)
-				self.graph.set_type(v, t)
+				self.graph.set_type(v, t) # type: ignore
 			self.graph.remove_vertices(marked)
 			marked = self.graph.edge_set()
 			for e in js["links"]:
@@ -427,8 +346,11 @@ class ZXEditorWidget(widgets.DOMWidget):
 					marked.remove(f)
 					self.graph.set_edge_type(f, et)
 				else:
-					self.graph.add_edge((s,t),et)
+					self.graph.add_edge((s,t),et) # type: ignore
 			self.graph.remove_edges(marked)
+			if 'scalar' in js:
+				self.graph.scalar = Scalar.from_json(js['scalar'])
+			self._update_matrix()
 		except Exception as e:
 			with self.output: print(traceback.format_exc())
 	
@@ -438,30 +360,68 @@ class ZXEditorWidget(widgets.DOMWidget):
 		self.msg.append("Handling graph change")
 		try:
 			js = json.loads(change['new'])
+			js['scalar'] = self.graph.scalar.to_json()
 			self.graph_from_json(js)
-			self.undo_stack_add(self.last_operation, change['new'])
+			self._undo_stack_add(self.last_operation, json.dumps(js))
 		except Exception as e:
 			with self.output: print(traceback.format_exc())
 		
 
-	def to_graph(self, zh=True):
+	def to_graph(self, zh:bool=True) -> GraphS:
 		return self.graph
 
 			
 
 _d3_editor_id = 0
-def edit(g, scale=None):
+
+def edit(
+		g: GraphS, 
+		scale:Optional[FloatInt]=None, 
+		show_matrix:bool=False,
+		show_scalar:bool=False,
+		show_errors:bool=True) -> ZXEditorWidget:
+	"""Start an instance of an ZX-diagram editor on a given graph ``g``.
+	Only usable in a Jupyter Notebook. 
+	When this function is called it displays a Jupyter Widget that allows
+	you to modify a pyzx Graph instance in the Notebook itself.
+	This function returns an instance of the editor widget, so it should be called like::
+
+		e = zx.editor.edit(g)
+
+	Usage:
+		Ctrl-click on empty space to add vertices.
+		Ctrl-drag between vertices to add edges.
+		Use the "Vertex type" and "Edge type" buttons to toggle which type of
+		vertex or edge to add.
+		Drag with left-mouse to make a selection.
+		Left-drag on a vertex to move it.
+		Delete or backspace removes the selection.
+		Ctrl-Z and Ctrl-Shift-Z undoes and redoes the last action.
+		With a part of the graph selected, click one of the action buttons
+		beneath the graph to perform a ZX-calculus rewrite.
+		Click "Save snapshot" to store the current graph into ``e.snapshots``.
+		Click "Load in tikzit" to open all snapshots in Tikzit.
+		Point ``zx.settings.tikzit_location`` to a Tikzit executable to use this function.
+
+	Args:
+		g: The Graph instance to edit
+		scale: What size the vertices should have (ideally somewhere between 20 and 50)
+		show_matrix: When True, displays the linear map the Graph implements beneath the editor
+		show_scalar: When True, displays ``g.scalar`` beneath the editor.
+		show_errors: When True, prints Exceptions beneath the editor
+	
+	"""
 	load_js()
 	global _d3_editor_id
 	_d3_editor_id += 1
 	seq = _d3_editor_id
 
-	if scale == None:
+	if scale is None:
 		scale = 800 / (g.depth() + 2)
 		if scale > 50: scale = 50
 		if scale < 20: scale = 20
 	
-	g.scale = scale
+	g.scale = scale # type: ignore
 	
 	node_size = 0.2 * scale
 	if node_size < 2: node_size = 2
@@ -472,8 +432,17 @@ def edit(g, scale=None):
 	js = graph_to_json(g, scale)
 
 
-	w = ZXEditorWidget(g, graph_json = js, graph_id = str(seq), 
-					  graph_width=w, graph_height=h, graph_node_size=node_size,
-					  graph_buttons = operations_to_js())
+	w = ZXEditorWidget(
+					g, show_matrix,show_scalar,
+					graph_json = js, graph_id = str(seq), 
+					graph_width=w, graph_height=h, 
+					graph_node_size=node_size,
+					graph_buttons = operations_to_js()
+					)
 	display(w)
+	if show_scalar:
+		display(w.scalar_view)
+	if show_matrix:
+		display(w.matrix_view)
+	if show_errors: display(w.output)
 	return w

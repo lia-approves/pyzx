@@ -1,19 +1,18 @@
 # PyZX - Python library for quantum circuit rewriting 
-#        and optimisation using the ZX-calculus
+#        and optimization using the ZX-calculus
 # Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#    http://www.apache.org/licenses/LICENSE-2.0
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import math
 from typing import Union, Any, Tuple, List, Optional, Set, Dict
@@ -40,6 +39,14 @@ class Mat2(object):
         return Mat2([[1 if i == j else 0
             for j in range(n)] 
               for i in range(n)])
+    @staticmethod
+    def zeros(m:int, n: int) -> 'Mat2':
+        return Mat2([[0
+            for j in range(n)] 
+              for i in range(m)])
+    @staticmethod
+    def unit_vector(d: int, i: int) -> 'Mat2':
+        return Mat2([[1 if j == i else 0] for j in range(d)])
 
     def __init__(self, data: MatLike):
         self.data: MatLike = data
@@ -56,6 +63,48 @@ class Mat2(object):
             " ]" for row in self.data)
     def __repr__(self) -> str:
         return str(self)
+    def __getitem__(self, key: Tuple[Union[int,slice],Union[int,slice]]) -> Union['Mat2',Z2]:
+        # For a pair of indices: if either is a slice, return the
+        # selected sub-matrix. Otherwise, return the selected element.
+        if isinstance(key,tuple):
+            rs,cs = key
+            if isinstance(rs,slice) or isinstance(cs,slice):
+                if not isinstance(rs,slice): rs = slice(rs,rs+1)
+                if not isinstance(cs,slice): cs = slice(cs,cs+1)
+                return Mat2([row[cs] for row in self.data[rs]])
+            else:
+                return self.data[rs][cs]
+        else:
+            raise IndexError("Expected a pair of indices/slices.")
+    def __setitem__(self, key, val):
+        # For a pair of indices: if either is a slice, expect a Mat2
+        # and overwrite the selected sub-matrix. Otherwise, expect
+        # Z2 and overwrite the selected element.
+        if isinstance(key,tuple):
+            rs,cs = key
+
+            if isinstance(val,Mat2):
+                d = val.data
+            else:
+                d = [[val]]
+
+            if isinstance(rs,slice):
+                rr = range(*rs.indices(self.rows()))
+            else:
+                rr = range(rs,rs+1)
+
+            if isinstance(cs,slice):
+                cr = range(*cs.indices(self.cols()))
+            else:
+                cr = range(cs,cs+1)
+
+            for i,iin in enumerate(rr):
+                for j,jin in enumerate(cr):
+                    self.data[iin][jin] = d[i][j]
+        else:
+            raise IndexError("Expected a pair of indices/slices.")
+            
+
     def copy(self) -> 'Mat2':
         return Mat2([list(row) for row in self.data])
     def transpose(self) -> 'Mat2':
@@ -90,7 +139,7 @@ class Mat2(object):
             self.data[r][c1] = v
 
     
-    def gauss(self, full_reduce:bool=False, x:Any=None, y:Any=None, blocksize:int=6) -> int:
+    def gauss(self, full_reduce:bool=False, x:Any=None, y:Any=None, blocksize:int=6, pivot_cols:List[int]=[]) -> int:
         """Compute the echelon form. Returns the number of non-zero rows in the result, i.e.
         the rank of the matrix.
 
@@ -98,7 +147,7 @@ class Mat2(object):
         useful e.g. for matrix inversion and CNOT circuit synthesis.
 
         The parameter 'blocksize' gives the size of the blocks in a block matrix for
-        performing Patel/Markov/Hayes optimisation, see:
+        performing Patel/Markov/Hayes optimization, see:
 
         K. Patel, I. Markov, J. Hayes. Optimal Synthesis of Linear Reversible
         Circuits. QIC 2008
@@ -120,7 +169,7 @@ class Mat2(object):
 
         rows = self.rows()
         cols = self.cols()
-        pcols = []
+        #pivot_cols = []
         pivot_row = 0
         for sec in range(math.ceil(cols / blocksize)):
             i0 = sec * blocksize
@@ -153,7 +202,8 @@ class Mat2(object):
                                 self.row_add(pivot_row, r1)
                                 if x is not None: x.row_add(pivot_row, r1)
                                 if y is not None: y.col_add(r1, pivot_row)
-                        if full_reduce: pcols.append(p)
+                        #if full_reduce:
+                        pivot_cols.append(p)
                         pivot_row += 1
                         break
                 p += 1
@@ -162,6 +212,7 @@ class Mat2(object):
 
         if full_reduce:
             pivot_row -= 1
+            pivot_cols1 = pivot_cols.copy()
 
             for sec in range(math.ceil(cols / blocksize) - 1, -1, -1):
                 i0 = sec * blocksize
@@ -180,8 +231,8 @@ class Mat2(object):
                     else:
                         chunks[t] = r
 
-                while len(pcols) != 0 and i0 <= pcols[-1] < i1:
-                    pcol = pcols.pop()
+                while len(pivot_cols1) != 0 and i0 <= pivot_cols1[-1] < i1:
+                    pcol = pivot_cols1.pop()
                     for r in range(0, pivot_row):
                         if self.data[r][pcol] != 0:
                             self.row_add(pivot_row, r)
@@ -228,20 +279,34 @@ class Mat2(object):
     def solve(self, b: 'Mat2') -> Optional['Mat2']:
         """Return a vector x such that M * x = b, or None if there is no solution."""
         m = self.copy()
-        x = b.copy()
-        rank = m.gauss(x=x, full_reduce=True)
+        b1 = b.copy()
+        rank = m.gauss(x=b1, full_reduce=True)
 
-        # check for inconsistencies, i.e. zero LHS with non-zero RHS
-        i = x.rows() - 1
-        while i > rank - 1:
-            if x.data[i][0] != 0:
+        # check for inconsistencies and set x to a
+        #  particular solution
+        x = Mat2.zeros(m.cols(),1)
+        for i,row in enumerate(m.data):
+            got_pivot = False
+            for j,v in enumerate(row):
+                if v != 0:
+                    got_pivot = True
+                    x.data[j][0] = b1.data[i][0]
+                    break
+            # zero LHS with non-zero RHS = no solutions
+            if not got_pivot and b1.data[i][0] != 0:
                 return None
-            i -= 1
-        if x.rows() > m.cols():
-            x.data = x.data[:m.cols()]
-        else:
-            x.data = x.data + [[0]]*(m.cols()-x.rows())
         return x
+
+        # i = b1.rows() - 1
+        # while i > rank - 1:
+        #     if b1.data[i][0] != 0:
+        #         return None
+        #     i -= 1
+        # if x.rows() > m.cols():
+        #     x.data = x.data[:m.cols()]
+        # else:
+        #     x.data = x.data + [[0]]*(m.cols()-x.rows())
+        # return x
 
     def nullspace(self, should_copy:bool=True) -> List[List[Z2]]:
         """Returns a list of non-zero vectors that span the nullspace
@@ -299,156 +364,3 @@ class CNOTMaker(object):
         self.cnots: List[CNOT] = []
     def row_add(self, r1:int, r2:int) -> None:
         self.cnots.append(CNOT(r2,r1))
-
-
-
-def xor_rows(l1: List[Z2], l2: List[Z2]) -> List[Z2]:
-    return [0 if l1[i]==l2[i] else 1 for i in range(len(l1))]
-
-def find_minimal_sums(m: Mat2) -> Optional[Tuple[int,...]]:
-    """Returns a list of rows in m that can be added together to reduce one of the rows so that
-    it only contains a single 1. Used in :func:`greedy_reduction`"""
-    r = m.rows()
-    d = m.data
-    if any(sum(r)==1 for r in d): return tuple()
-    combs:  Dict[Tuple[int,...],List[Z2]] = {(i,):d[i] for i in range(r)}
-    combs2: Dict[Tuple[int,...],List[Z2]] = {}
-    iterations = 0
-    while True:
-        combs2 = {}
-        for index,l in combs.items():
-            for k in range(max(index)+1,r):
-                #Unrolled xor_rows(combs[index],d[k])
-                row: List[Z2] = [0 if v1==v2 else 1 for v1,v2 in zip(combs[index],d[k])]
-                #row = xor_rows(combs[index],d[k])
-                if sum(row) == 1:
-                    return (*index,k)
-                combs2[(*index,k)] = row
-                iterations += 1
-            if iterations > 100000:
-                return None
-        if not combs2:
-            return None
-            #raise ValueError("Irreducible input has been given")
-        combs = combs2
-
-def greedy_reduction(m: Mat2) -> Optional[List[Tuple[int,int]]]:
-    """Returns a list of tuples (r1,r2) that specify which row should be added to which other row
-    in order to reduce one row of m to only contain a single 1. 
-    Used in :func:`extract.streaming_extract`"""
-    indicest = find_minimal_sums(m)
-    if indicest is None: return indicest
-    indices = list(indicest)
-    rows = {i:m.data[i] for i in indices}
-    weights = {i: sum(r) for i,r in rows.items()}
-    result = []
-    while len(indices)>1:
-        best = (-1,-1)
-        reduction = -10000
-        for i in indices:
-            for j in indices:
-                if j <= i: continue
-                w = sum(xor_rows(rows[i],rows[j]))
-                if weights[i] - w > reduction:
-                    best = (j,i) # "Add row j to i"
-                    reduction = weights[i] - w
-                if weights[j] - w > reduction:
-                    best = (i,j)
-                    reduction = weights[j] - w
-        result.append(best)
-        control, target = best
-        rows[target] = xor_rows(rows[control],rows[target])
-        weights[target] = weights[target] - reduction
-        indices.remove(control)
-    return result
-
-
-
-def column_optimal_swap(m: Mat2) -> Dict[int,int]:
-    qubits = min([m.rows(), m.cols()])
-    connections:  Dict[int,Set[int]] = {i: set() for i in range(qubits)}
-    connectionsr: Dict[int,Set[int]] = {j: set() for j in range(qubits)}
-
-    for i in range(qubits):
-            for j in range(qubits):
-                if m.data[i][j]: 
-                    connections[i].add(j)
-                    connectionsr[j].add(i)
-
-    target = _find_targets(connections, connectionsr)
-    assert target is not None
-    target = {v:k for k,v in target.items()}
-    left = list(set(range(qubits)).difference(target.keys()))
-    right = list(set(range(qubits)).difference(target.values()))
-    for i in range(len(left)):
-        target[left[i]] = right[i]
-    return target
-
-
-def _find_targets(conn:   Dict[int,Set[int]], 
-				  connr:  Dict[int,Set[int]], 
-				  target: Dict[int,int]={}
-				  ) -> Optional[Dict[int,int]]:
-    target = target.copy()
-    qubits = len(conn)
-    claimedr = set(target.values())
-    claimed = set(target.keys())
-    
-    while True:
-        min_index = -1
-        min_options = set(range(1000))
-        for i in range(qubits):
-            if i in claimed: continue
-            s = conn[i] - claimedr
-            for i2 in s.copy(): # Go trough the possible options
-                for j1 in (connr[i2] - claimed): 
-                    if j1 != i and j1 in target and i in connr[target[j1]]: # i connected to j2
-                        #This is not allowed
-                        #print("not allowed1:", i, i2)
-                        s.remove(i2)
-                        break
-            if len(s) == 0: return None # No possible options, start backtracking
-            if len(s) == 1:
-                j = s.pop()
-                #print("forced1", i,j)
-                target[i] = j
-                claimed.add(i)
-                claimedr.add(j)
-                break
-            should_break = False
-            for i2 in s:
-                t = connr[i2] - claimed
-                for i1 in t.copy():
-                    for j1 in connr[i2]:
-                        if j1 != i1 and j1 in target and i1 in connr[target[j1]]: 
-                            #print("not allowed2:", i1, j1)
-                            t.remove(i1)
-                            break
-                if len(t) == 0: return None
-                if len(t) == 1: # we must connect them together
-                    i1 = t.pop()
-                    #print("forced2", i1,i2)
-                    target[i1] = i2
-                    claimed.add(i1)
-                    claimedr.add(i2)
-                    should_break = True
-                    break
-            if should_break: break
-            if len(s) < len(min_options):
-                min_index = i
-                min_options = s
-        else: # No forced decisions
-            if not (conn.keys() - claimed): # we are done
-                return target
-            if min_index == -1: raise ValueError("This shouldn't happen ever")
-            # Start depth-first search
-            tgt = target.copy()
-            #print("backtracking on", min_index)
-            for i2 in min_options:
-                #print("trying option", i2)
-                tgt[min_index] = i2
-                r = _find_targets(conn, connr, tgt)
-                if r: return r
-            #print("Unsuccessful")
-            return target
-            

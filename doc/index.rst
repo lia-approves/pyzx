@@ -11,11 +11,10 @@ PyZX
    :caption: Contents:
    
    gettingstarted
-   generate
    simplify
-   extract
    graph
    representations
+   api
 
 
 Indices and tables

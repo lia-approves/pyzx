@@ -145,4 +145,4 @@ class QiskitQASMParser(QASMParser):
                 if val.find('/') == -1: raise TypeError("Invalid specification {}".format(name))
                 phase = float(val[:val.find('/')]) / float(val[val.find('/') + 1:])
         phase = Fraction(phase).limit_denominator(100000000)
-        return phase
+        return float(phase)

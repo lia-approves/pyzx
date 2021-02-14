@@ -2,28 +2,30 @@
 #        and optimisation using the ZX-calculus
 # Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#    http://www.apache.org/licenses/LICENSE-2.0
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-__version__ = "0.5.1"
+__version__ = "0.6.3"
 
 from .graph.graph import Graph
+from .circuit import Circuit, gates, id
 from .linalg import Mat2
+from .utils import settings, VertexType, EdgeType
 from .drawing import *
 from .simplify import *
+from .optimize import *
+from .extract import *
 from .io import *
 from .tensor import *
-from .circuit import Circuit, gates, id
 from .circuit.qasmparser import qasm
 from .circuit.sqasm import sqasm
 from . import quantomatic
@@ -40,7 +42,21 @@ from . import d3
 from . import tikz
 from . import simulate
 from . import editor
+from . import routing
+from . import sparsify
+from .routing.parity_maps import CNOT_tracker
 
+# some common scalars
+from .graph.base import Scalar
+ONE = Scalar()
+SQRT_TWO = Scalar()
+SQRT_TWO.add_power(1)
+TWO = Scalar()
+TWO.add_power(2)
+SQRT_TWO_INV = Scalar()
+SQRT_TWO_INV.add_power(-1)
+TWO_INV = Scalar()
+TWO_INV.add_power(-2)
 
 if __name__ == '__main__':
     print("Please execute this as a module by running 'python -m pyzx'")

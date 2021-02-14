@@ -1,19 +1,18 @@
 # PyZX - Python library for quantum circuit rewriting 
-#        and optimisation using the ZX-calculus
+#        and optimization using the ZX-calculus
 # Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#    http://www.apache.org/licenses/LICENSE-2.0
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 from .qasmparser import QASMParser
 from ..rules import *
@@ -27,11 +26,11 @@ __all__ = ['sqasm']
 # versions of these rules which instruct the simplifier *not* to remove
 # isolated vertices. n.b. remove_ids already does this, but this might change
 # in the future...
-def spider_nocheck(g: BaseGraph, ms: List) -> TypeRewriteOutput:
+def spider_nocheck(g: BaseGraph, ms: List) -> RewriteOutputType:
     etab,rem_v,rem_e,check = spider(g, ms)
     return (etab, rem_v, rem_e, False)
 
-def remove_ids_nocheck(g: BaseGraph, ms: List) -> TypeRewriteOutput:
+def remove_ids_nocheck(g: BaseGraph, ms: List) -> RewriteOutputType:
     etab,rem_v,rem_e,check = remove_ids(g, ms)
     return (etab, rem_v, rem_e, False)
 
@@ -44,7 +43,7 @@ def sqasm(s: str, simplify=True) -> BaseGraph:
             for q in range(sp[0],sp[0]+sp[1]):
                 if r[0] != 'Z':
                     v = g.inputs[q]
-                    v1 = list(g.neighbours(v))
+                    v1 = list(g.neighbors(v))
                     if len(v1) > 0 and g.type(v1[0]) != VertexType.BOUNDARY:
                         g.set_type(v, g.type(v1[0]))
                     else:
@@ -54,7 +53,7 @@ def sqasm(s: str, simplify=True) -> BaseGraph:
 
                 if r[0] != 'A':
                     v = g.outputs[q]
-                    v1 = list(g.neighbours(v))
+                    v1 = list(g.neighbors(v))
                     if len(v1) > 0 and g.type(v1[0]) != VertexType.BOUNDARY:
                         g.set_type(v, g.type(v1[0]))
                     else:

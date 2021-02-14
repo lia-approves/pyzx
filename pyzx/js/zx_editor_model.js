@@ -1,3 +1,19 @@
+// PyZX - Python library for quantum circuit rewriting 
+//        and optimisation using the ZX-calculus
+// Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // When the next line is uncommented, the module is reloaded every time the javascript is imported
 // This is useful for development.
 require.undef('zx_editor');
@@ -44,6 +60,7 @@ define('zx_editor', ["@jupyter-widgets/base", "make_editor"], function(widgets,m
             this.listenTo(this.model, 'change:graph_json', this.graph_changed, this);
             this.listenTo(this.model, 'change:graph_selected', this.graph_changed, this);
 
+            // Create graph operation buttons
             var div_buttons = document.createElement('div');
             var operations = JSON.parse(this.model.get('graph_buttons'));
             var buttons = {};
@@ -53,7 +70,6 @@ define('zx_editor', ["@jupyter-widgets/base", "make_editor"], function(widgets,m
                 buttons[btn_id] = btn
                 btn.textContent = operations[btn_id]['text'];
                 btn.setAttribute('title',operations[btn_id]['tooltip'])
-                //btn.setAttribute('id', 'zx-button' + graph_id + '-' + btn_id);
                 btn.disabled = true;
                 btn.setAttribute('style', 'opacity: 60%;');
                 btn.addEventListener('click', function(e) {model.set('button_clicked', btn_id);model.save_changes();});
@@ -62,8 +78,20 @@ define('zx_editor', ["@jupyter-widgets/base", "make_editor"], function(widgets,m
             this.el.appendChild(div_buttons);
             this.buttons = buttons;
             this.listenTo(this.model, 'change:graph_buttons', this.buttons_changed, this);
-            //btn.onclick = this.push_changes.bind(this);
-            //this.el.appendChild(btn)
+            
+            var div_snapshots = document.createElement('div');
+            var btn = document.createElement('button');
+            btn.textContent = 'Save snapshot';
+            btn.setAttribute('title','Save current graph as a snapshot')
+            btn.addEventListener('click',function(e) {model.set('action','snapshot');model.save_changes();});
+            div_snapshots.appendChild(btn);
+            var btn = document.createElement('button');
+            btn.textContent = 'Load in Tikzit';
+            btn.setAttribute('title','Load all snapshots and current graph into tikzit')
+            btn.addEventListener('click',function(e) {model.set('action','tikzit');model.save_changes();});
+            div_snapshots.appendChild(btn);
+
+            this.el.appendChild(div_snapshots);
         },
 
         strip_graph: function(graph) {

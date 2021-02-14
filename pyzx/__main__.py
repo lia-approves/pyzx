@@ -1,57 +1,26 @@
 # PyZX - Python library for quantum circuit rewriting 
-#        and optimisation using the ZX-calculus
+#        and optimization using the ZX-calculus
 # Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#    http://www.apache.org/licenses/LICENSE-2.0
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-usage_string = """python -m pyzx command [args]
-Run one of the scripts supplied with PyZX.
-
-The options for command are:
-    opt    -- Optimise a circuit using PyZX
-    tikz   -- Convert a circuit into a Tikz file
-    mapper -- Map CNOT circuits onto restricted architectures
-
-For help on the arguments for these commands run for instance 'python -m pyzx opt --help'
-"""
 
 if __name__ == '__main__':
     import sys
-    import argparse
     try:
-        from .scripts import circ2circ
-        from .scripts import circ2tikz
-        from .scripts import cnot_mapper
-    except SystemError:
+        from .scripts import main
+    except (SystemError, ImportError):
         print("Please run as a module by using 'python -m pyzx'")
         exit(1)
-    
-    parser = argparse.ArgumentParser(prog="PyZX", description="PyZX commandline interface",
-                                     usage=usage_string)
-    parser.add_argument('command', help='Command to run')
-    if len(sys.argv) == 1:
-        parser.print_help()
-        exit(1)
-    args = parser.parse_args(sys.argv[1:2])
-    if args.command not in ('opt', 'tikz', 'mapper'):
-        print("Unrecognized command '{}'".format(args.command))
-        parser.print_help()
-        exit(1)
 
-    if args.command == 'opt':
-        circ2circ.main(sys.argv[2:])
-    if args.command == 'tikz':
-        circ2tikz.main(sys.argv[2:])
-    if args.command == 'mapper':
-        cnot_mapper.main(sys.argv[2:])
+    main(sys.argv)

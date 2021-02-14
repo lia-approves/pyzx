@@ -1,3 +1,19 @@
+// PyZX - Python library for quantum circuit rewriting 
+//        and optimisation using the ZX-calculus
+// Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
+
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+
+//    http://www.apache.org/licenses/LICENSE-2.0
+
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 require.undef('zx_viewer');
 
 define('zx_viewer', ['d3'], function(d3) {
@@ -5,8 +21,8 @@ define('zx_viewer', ['d3'], function(d3) {
     // styling functions
     function nodeColor(t) {
         if (t == 0) return "black";
-        else if (t == 1) return "green";
-        else if (t == 2) return "red";
+        else if (t == 1) return "#ccffcc";
+        else if (t == 2) return "#ff8888";
         else if (t == 3) return "yellow";
     }
 
@@ -20,7 +36,7 @@ define('zx_viewer', ['d3'], function(d3) {
     }
 
     return {
-    showGraph: function(tag, graph, width, height, scale, node_size, auto_hbox, show_labels) {
+    showGraph: function(tag, graph, width, height, scale, node_size, auto_hbox, show_labels, scalar_str) {
         var ntab = {};
 
         graph.nodes.forEach(function(d) {
@@ -106,13 +122,20 @@ define('zx_viewer', ['d3'], function(d3) {
 
         if (show_labels) {
             node.append("text")
-                .attr("y", -0.7 * node_size - 5)
+                .attr("y", -0.7 * node_size - 8)
                 .text(function (d) { return d.name; })
                 .attr("text-anchor", "middle")
-                .attr("font-size", "8px")
+                .attr("font-size", "10px")
                 .attr("font-family", "monospace")
-                .attr("fill", "#ccc")
+                .attr("fill", "#999")
                 .attr('style', 'pointer-events: none; user-select: none;');
+        }
+
+        if (scalar_str != "") {
+            svg.append("text")
+                .text(scalar_str)
+                .attr("x", 60).attr("y", 40)
+                .attr("text-anchor", "middle")
         }
 
         function update_hboxes() {

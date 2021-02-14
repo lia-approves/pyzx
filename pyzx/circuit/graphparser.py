@@ -1,19 +1,18 @@
 # PyZX - Python library for quantum circuit rewriting 
-#        and optimisation using the ZX-calculus
+#        and optimization using the ZX-calculus
 # Copyright (C) 2018 - Aleks Kissinger and John van de Wetering
 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#    http://www.apache.org/licenses/LICENSE-2.0
 
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 from typing import Dict, List, Optional
 
@@ -39,7 +38,7 @@ def graph_to_circuit(g:BaseGraph[VT,ET], split_phases:bool=True) -> Circuit:
             q = qs[v]
             phase = phases[v]
             t = ty[v]
-            neigh = [w for w in g.neighbours(v) if rs[w]<r]
+            neigh = [w for w in g.neighbors(v) if rs[w]<r]
             if len(neigh) != 1:
                 raise TypeError("Graph doesn't seem circuit like: multiple parents")
             n = neigh[0]
@@ -66,7 +65,7 @@ def graph_to_circuit(g:BaseGraph[VT,ET], split_phases:bool=True) -> Circuit:
                 if t == VertexType.Z: c.add_gate("ZPhase", q, phase=phase)
                 else: c.add_gate("XPhase", q, phase=phase)
 
-            neigh = [w for w in g.neighbours(v) if rs[w]==r and w<v] # type: ignore # TODO: find a different way to do comparison of vertices
+            neigh = [w for w in g.neighbors(v) if rs[w]==r and w<v] # type: ignore # TODO: find a different way to do comparison of vertices
             for n in neigh:
                 t2 = ty[n]
                 q2 = qs[n]
